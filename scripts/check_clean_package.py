@@ -40,4 +40,4 @@ if bad:
     for item in bad[:200]:
         print(f"  {item}")
     raise SystemExit(1)
-print("OK: clean six-method source package.")
+print("OK: clean seven-method source package with separate streaming protocol.")

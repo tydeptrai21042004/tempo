@@ -78,10 +78,10 @@ def _proposal_params(path: str | None) -> dict[str, dict[str, Any]]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Reproducible six-method watermark benchmark commands.")
+    parser = argparse.ArgumentParser(description="Reproducible watermark benchmark commands.")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    image = sub.add_parser("image512-all", help="Run the six-method matched-distortion image benchmark.")
+    image = sub.add_parser("image512-all", help="Run the existing matched-distortion image benchmark.")
     image.add_argument("--workdir", default="reports/image512_all")
     image.add_argument("--host", default=None)
     image.add_argument("--watermark", default=None)
@@ -109,7 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
     dataset.add_argument("--calibration-hosts", type=int, default=3)
     dataset.add_argument("--max-hosts", type=int, default=None)
 
-    video = sub.add_parser("video-realtime", help="Run the common framewise video protocol for all six methods.")
+    video = sub.add_parser("video-realtime", help="Run the existing common framewise video protocol.")
     video.add_argument("--workdir", default="reports/video_realtime")
     video.add_argument("--input", default=None)
     video.add_argument("--watermark", default=None)

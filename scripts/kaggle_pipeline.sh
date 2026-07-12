@@ -48,6 +48,8 @@ if [[ "$MODE" == "quick" ]]; then
   VIDEO_WARMUP_FRAMES="${VIDEO_WARMUP_FRAMES:-2}"
   HOST_LIMIT="${HOST_LIMIT:-2}"
   ABLATION_HOST_LIMIT="${ABLATION_HOST_LIMIT:-1}"
+  STREAM_FRAMES="${STREAM_FRAMES:-30}"
+  STREAM_RESOLUTIONS="${STREAM_RESOLUTIONS:-512x512}"
 else
   HP_ATTACK_PRESET="${HP_ATTACK_PRESET:-standard}"
   IMAGE_ATTACK_PRESET="${IMAGE_ATTACK_PRESET:-stress}"
@@ -55,6 +57,8 @@ else
   VIDEO_WARMUP_FRAMES="${VIDEO_WARMUP_FRAMES:-10}"
   HOST_LIMIT="${HOST_LIMIT:-0}"
   ABLATION_HOST_LIMIT="${ABLATION_HOST_LIMIT:-0}"
+  STREAM_FRAMES="${STREAM_FRAMES:-120}"
+  STREAM_RESOLUTIONS="${STREAM_RESOLUTIONS:-512x512,1280x720}"
 fi
 
 rm -rf "$REPORT_ROOT" "$SELECTED_DATA_DIR" "$MASTER_ZIP"
@@ -171,7 +175,10 @@ if [[ -n "$VIDEO_INPUT" ]]; then
 fi
 "$PYTHON_BIN" scripts/run_multiwatermark_video.py "${VIDEO_ARGS[@]}"
 
-stage "9. EXPORT EVIDENCE AND PACKAGE RESULTS"
+stage "9. RUN DEADLINE-CONSTRAINED LIVE-STREAM BENCHMARK"
+"$PYTHON_BIN" scripts/live_stream_benchmark.py   --watermark "$WATERMARK_DIR/wm.png"   --proposal-config "$SELECTED_CONFIG"   --workdir "$REPORT_ROOT/live_stream"   --wm-size 16   --frames "$STREAM_FRAMES"   --resolutions "$STREAM_RESOLUTIONS"   --target-fps 30   --channels clean,jpeg70   --pace-mode virtual   --queue-size 2
+
+stage "10. EXPORT EVIDENCE AND PACKAGE RESULTS"
 "$PYTHON_BIN" scripts/export_method_evidence.py --out-dir "$REPORT_ROOT/method_evidence"
 "$PYTHON_BIN" -m pip freeze > "$REPORT_ROOT/pip_freeze.txt" || true
 cat > "$REPORT_ROOT/run_manifest.txt" <<EOF
@@ -185,6 +192,8 @@ hyperparameter_attack_preset=$HP_ATTACK_PRESET
 image_attack_preset=$IMAGE_ATTACK_PRESET
 video_frames=$VIDEO_FRAMES
 video_codec=$VIDEO_CODEC
+stream_frames=$STREAM_FRAMES
+stream_resolutions=$STREAM_RESOLUTIONS
 selected_config=$SELECTED_CONFIG
 EOF
 "$PYTHON_BIN" scripts/package_results.py \
@@ -207,9 +216,10 @@ print(destination)
 PY
 sha256sum "$MASTER_ZIP" | tee "$REPORT_ROOT/master_zip_sha256.txt"
 
-stage "10. COMPLETE"
+stage "11. COMPLETE"
 echo "Results directory: $REPORT_ROOT"
 echo "Master ZIP: $MASTER_ZIP"
 echo "Image summary: $REPORT_ROOT/all_methods_all_metrics/summary_by_method_watermark.csv"
 echo "Attack summary: $REPORT_ROOT/all_methods_all_metrics/summary_by_attack.csv"
 echo "Video summary: $REPORT_ROOT/video/all_watermarks_video_summary.csv"
+echo "Stream summary: $REPORT_ROOT/live_stream/ALL_STREAM_realtime_summary.csv"

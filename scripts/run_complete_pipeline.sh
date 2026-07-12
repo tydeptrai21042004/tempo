@@ -11,6 +11,7 @@ CONFIG="${PROPOSAL_CONFIG:-configs/proposal_frozen.json}"
 DATA_DIR="${DATA_DIR:-data/user_dataset}"
 RUN_COMMON="${RUN_COMMON:-0}"
 RUN_VIDEO="${RUN_VIDEO:-0}"
+RUN_STREAM="${RUN_STREAM:-0}"
 
 export PYTHONPATH="$ROOT/src:$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
@@ -66,6 +67,14 @@ if [[ "$RUN_VIDEO" == "1" ]]; then
     --workdir "$OUT/video_benchmark" --proposal-config "$CONFIG" --max-frames 300
 fi
 
+if [[ "$RUN_STREAM" == "1" ]]; then
+  "$PYTHON" scripts/live_stream_benchmark.py \
+    --workdir "$OUT/live_stream" --proposal-config "$CONFIG" \
+    --watermark "$DATA_DIR/watermark/wm.png" --wm-size 16 \
+    --frames 120 --resolutions 512x512 --target-fps 30 \
+    --channels clean,jpeg70 --pace-mode virtual
+fi
+
 "$PYTHON" scripts/export_method_evidence.py --out-dir "$OUT/evidence"
 "$PYTHON" scripts/package_results.py --results-dir "$OUT" \
   --output "$OUT/watermark_reports.zip" --csv-output "$OUT/watermark_csv.zip"
@@ -73,3 +82,4 @@ fi
 echo "Complete paper-native pipeline finished: $OUT"
 echo "Optional common protocol: RUN_COMMON=1 ./run.sh full"
 echo "Optional video protocol: RUN_VIDEO=1 ./run.sh full"
+echo "Optional live-stream protocol: RUN_STREAM=1 ./run.sh full"
