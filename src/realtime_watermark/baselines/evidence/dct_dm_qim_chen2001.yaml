@@ -1,0 +1,25 @@
+method_id: dct_dm_qim_chen2001
+source:
+  title: "Quantization Index Modulation: A Class of Provably Good Methods for Digital Watermarking and Information Embedding"
+  doi: "10.1109/18.923725"
+paper_native_track:
+  domain: scalar Gaussian host channel
+  attacks: [AWGN, positive_amplitude_scaling]
+  metrics: [empirical_bit_error_probability, normalized_DNR]
+  detector_type: blind
+  psnr_calibration: false
+  common_ecc: false
+implementation_scope:
+  exact:
+    - pseudorandom binary dither construction with d0 uniform on [-Delta/2, Delta/2)
+    - d1 separated from d0 by Delta/2
+    - nearest-dithered-quantizer embedding and detection
+  declared_adapter:
+    - 8x8 luminance DCT host transform
+    - one fixed mid-frequency coefficient per selected block
+protocol:
+  blind: true
+  bits_per_block: 1
+  schedule: seed_regenerated
+  dither: seed_regenerated
+primary_common_protocol_eligible: true

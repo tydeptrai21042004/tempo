@@ -1,0 +1,10 @@
+cff-version: 1.3.0
+message: "Please cite this software and the original papers of every baseline used."
+title: "Real-Time Watermark Benchmark"
+type: software
+authors:
+  - family-names: "Dang"
+    given-names: "Ba Ty"
+version: 1.3.0
+date-released: 2026-07-12
+repository-code: "https://github.com/tydeptrai21042004/real_time_watermark"

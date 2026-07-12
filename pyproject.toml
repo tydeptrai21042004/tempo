@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "real-time-watermark-benchmark"
+version = "1.4.0"
+description = "Paper-native and common-protocol watermark benchmark with reproducible QIM, STDM, ISS, CA-QIM, Cox spread spectrum, and JILP-QIM"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.23",
+  "Pillow>=9.0",
+  "numba>=0.58",
+  "scikit-image>=0.20",
+  "scipy>=1.9",
+  "opencv-python-headless>=4.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

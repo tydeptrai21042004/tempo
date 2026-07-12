@@ -1,0 +1,6 @@
+numpy>=1.23
+Pillow>=9.0
+numba>=0.58
+scikit-image>=0.20
+scipy>=1.9
+opencv-python-headless>=4.8

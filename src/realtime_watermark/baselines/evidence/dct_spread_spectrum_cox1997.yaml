@@ -1,0 +1,17 @@
+method_id: dct_spread_spectrum_cox1997
+paper:
+  title: Secure Spread Spectrum Watermarking for Multimedia
+  authors: I. J. Cox; J. Kilian; F. T. Leighton; T. Shamoon
+  venue: IEEE Transactions on Image Processing
+  year: 1997
+  doi: 10.1109/83.650120
+native_detector: non_blind
+verified:
+  - i.i.d. Gaussian watermark sequence
+  - 1000 largest-magnitude whole-image DCT AC coefficients in the native track
+  - multiplicative insertion with alpha 0.1
+  - original selected coefficients required for extraction
+  - paper similarity response
+common_adapter:
+  - luminance-channel RGB wrapper
+  - Gaussian-magnitude binary sign sequence for supplementary BER and NC

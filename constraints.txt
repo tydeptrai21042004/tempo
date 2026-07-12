@@ -1,0 +1,9 @@
+# Frozen environment used for the validated rebuild.
+numpy==2.3.5
+Pillow==12.2.0
+numba==0.65.1
+scikit-image==0.26.0
+scipy==1.17.0
+opencv-python-headless==4.13.0.92
+pytest==9.0.2
+setuptools==82.0.1

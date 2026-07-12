@@ -1,0 +1,38 @@
+method_id: ca_qim_a2_mao2024
+source:
+  title: "Content-Aware Quantization Index Modulation: Leveraging Data Statistics for Enhanced Image Watermarking"
+  doi: "10.1109/TIFS.2023.3342612"
+paper_native_track:
+  image_mode: grayscale
+  transform: non-overlapping 8x8 DCT
+  fine_lattice: A2
+  capacity_grid:
+    payload_bits_per_dimension: [1, 2, 3]
+    frequencies: [low, mid, high]
+    metrics: [MSE_frequency, PSNR_frequency, PRD_frequency, MSE_spatial, PSNR_spatial, SSIM_spatial]
+  robustness:
+    code_rate_bits_per_dimension: 2
+    embedded_vectors_per_block: [1, 2, 3, all]
+    attacks: [Gaussian, salt, pepper, spicy_salt, speckle]
+    metric: symbol_error_rate
+  message_bit_zero_probability: 0.9
+  detector_type: semi_blind
+  detector_side_information: image-dependent canonical message-to-coset mapping
+  psnr_calibration: false
+  common_ecc: false
+  exact_numeric_figure10_claim: false
+  limitation: "The paper does not expose machine-readable attack strengths, exact coefficient indices, or the lattice scale."
+common_adapter:
+  fine_lattice: A2
+  coarse_lattice: 4A2
+  code_rate_bits_per_dimension: 2
+  cosets: 16
+  declared_adaptations:
+    - one 2-D DCT carrier vector per selected block
+    - balanced common watermark rather than forced 0.9 zero prior
+    - native-capacity repetition and soft minimum-distance combining for the common fixed payload
+protocol:
+  blind: false
+  semi_blind: true
+  bits_per_block: 4
+primary_common_protocol_eligible: true

@@ -1,0 +1,26 @@
+method_id: dct_stdm_qim_chen2001
+source:
+  title: "Quantization Index Modulation: A Class of Provably Good Methods for Digital Watermarking and Information Embedding"
+  doi: "10.1109/18.923725"
+paper_native_track:
+  domain: length-100 Gaussian host vector and spread-transform projection
+  attacks: [AWGN, positive_amplitude_scaling]
+  metrics: [empirical_bit_error_probability, paper_equation_49_bit_error_probability, normalized_DNR]
+  detector_type: blind
+  psnr_calibration: false
+  common_ecc: false
+implementation_scope:
+  exact:
+    - spread-transform projection
+    - pseudorandom binary dither quantization of the projection
+    - displacement spread along the unit projection vector
+    - nearest-dithered-quantizer detector
+  declared_adapter:
+    - 32-dimensional medium-frequency 8x8 luminance-DCT vector
+protocol:
+  blind: true
+  bits_per_block: 1
+  schedule: seed_regenerated
+  spread_vector: seed_regenerated
+  dither: seed_regenerated
+primary_common_protocol_eligible: true

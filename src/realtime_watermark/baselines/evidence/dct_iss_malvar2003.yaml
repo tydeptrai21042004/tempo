@@ -1,0 +1,26 @@
+method_id: dct_iss_malvar2003
+source:
+  title: "Improved Spread Spectrum: A New Modulation Technique for Robust Watermarking"
+  doi: "10.1109/TSP.2003.809385"
+paper_native_track:
+  domain: paper sufficient-statistic Gaussian model
+  attacks: [AWGN, positive_amplitude_scaling]
+  sweeps: [SNR, relative_watermark_power_rho, cancellation_lambda]
+  metrics: [empirical_error_probability, paper_equation_19_error_probability, mean_distortion, max_distortion]
+  detector_type: blind
+  psnr_calibration: false
+  common_ecc: false
+implementation_scope:
+  exact:
+    - Section V-A maximum-useful-distortion rule around the linear ISS displacement
+    - correlation-sign detector
+  declared_adapter:
+    - 28-dimensional upper-mid/high-frequency 8x8 luminance-DCT vector
+    - fixed lambda 0.90 operating point
+    - block-DCT transform chosen for the common image protocol
+protocol:
+  blind: true
+  bits_per_block: 1
+  schedule: seed_regenerated
+  pn_sequence: seed_regenerated
+primary_common_protocol_eligible: true
