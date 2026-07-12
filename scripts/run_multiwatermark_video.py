@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from realtime_watermark.core import (
+    ber,
+    bit_accuracy,
+    load_binary_watermark,
+    nc_binary,
+    psnr,
+    save_csv,
+    save_json,
+    ssim_gray,
+)
+from realtime_watermark.demo_assets import ensure_demo_video
+from realtime_watermark.native_metrics import binary_symbol_error_rate, mse, prd
+from realtime_watermark.paper_native import NATIVE_DISCLOSURES
+from realtime_watermark.proposals.jilp_qim.config import JILPQIMConfig
+from realtime_watermark.registry import COMMON_VIDEO_METHODS
+from realtime_watermark.video_pipeline import embed_video_method, extract_video_method
+
+
+def _safe(value: str) -> str:
+    return "".join(character if character.isalnum() else "_" for character in value)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Run all video-supported methods for both selected PNG watermarks without PSNR calibration."
+    )
+    parser.add_argument("--watermark-dir", required=True)
+    parser.add_argument("--proposal-config", required=True)
+    parser.add_argument("--out-dir", required=True)
+    parser.add_argument("--input", default=None)
+    parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--wm-size", type=int, default=64)
+    parser.add_argument("--max-frames", type=int, default=300)
+    parser.add_argument("--warmup-frames", type=int, default=10)
+    parser.add_argument("--codec", default="mp4v")
+    args = parser.parse_args()
+
+    watermark_paths = sorted(
+        path for path in Path(args.watermark_dir).glob("*.png") if path.is_file()
+    )
+    if len(watermark_paths) != 2:
+        raise RuntimeError(f"Expected exactly two PNG watermarks; found {len(watermark_paths)}.")
+
+    out = Path(args.out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    proposal = JILPQIMConfig.load(args.proposal_config)
+    proposal_hash = proposal.sha256()
+    video = ensure_demo_video(
+        out / "inputs",
+        input_path=args.input,
+        auto_download=False,
+        width=512,
+        height=512,
+        frames=max(args.max_frames, 12),
+    )
+
+    rows: list[dict[str, object]] = []
+    for watermark_index, watermark_path in enumerate(watermark_paths, start=1):
+        watermark_tag = f"watermark_{watermark_index:02d}_{_safe(watermark_path.stem)}"
+        watermark_seed = args.seed + 1000003 * (watermark_index - 1)
+        original = load_binary_watermark(watermark_path, size=args.wm_size)
+
+        for method_id in COMMON_VIDEO_METHODS:
+            method_out = out / watermark_tag / method_id
+            method_out.mkdir(parents=True, exist_ok=True)
+            output_video = method_out / "watermarked.mp4"
+            key_path = method_out / "key.json"
+            recovered_path = method_out / "recovered.png"
+            extraction_report = method_out / "extraction_report.json"
+
+            if method_id == "proposal":
+                step = proposal.step
+                method_params = proposal.to_dict()
+                expected_hash = proposal_hash
+            else:
+                step = None
+                method_params = None
+                expected_hash = None
+
+            embedding = embed_video_method(
+                method_id=method_id,
+                input_video_path=video,
+                output_video_path=output_video,
+                watermark_path=watermark_path,
+                key_path=key_path,
+                wm_size=args.wm_size,
+                seed=watermark_seed,
+                step=step,
+                codec=args.codec,
+                max_frames=args.max_frames,
+                warmup_frames=args.warmup_frames,
+                method_params=method_params,
+            )["stats"]
+            extraction = extract_video_method(
+                input_video_path=output_video,
+                key_path=key_path,
+                output_watermark_path=recovered_path,
+                report_path=extraction_report,
+                reference_watermark_path=watermark_path,
+                max_frames=args.max_frames,
+                warmup_frames=args.warmup_frames,
+            )["stats"]
+
+            if expected_hash is not None:
+                actual_hash = str(embedding.get("configuration_sha256", ""))
+                if actual_hash != expected_hash:
+                    raise RuntimeError(
+                        "Proposal configuration mismatch in video benchmark: "
+                        f"expected={expected_hash}, actual={actual_hash}"
+                    )
+
+            recovered = load_binary_watermark(recovered_path, size=args.wm_size)
+            disclosure = NATIVE_DISCLOSURES.get(method_id)
+            detector_type = disclosure.detector_type if disclosure is not None else "blind"
+            accuracy = float(bit_accuracy(original, recovered))
+            bit_error = float(ber(original, recovered))
+            rows.append(
+                {
+                    "watermark_index": watermark_index,
+                    "watermark_name": watermark_path.name,
+                    "watermark_path": str(watermark_path),
+                    "method_id": method_id,
+                    "detector_type": detector_type,
+                    "video_protocol": "common_framewise_adapter_native_default_strength",
+                    "forced_psnr_calibration": False,
+                    "common_ecc": False,
+                    "configured_step": step if step is not None else "method_default",
+                    "configuration_sha256": embedding.get("configuration_sha256"),
+                    "frame_count": embedding["frame_count"],
+                    "precodec_mean_psnr": embedding["avg_frame_psnr_before_video_codec"],
+                    "bit_accuracy": accuracy,
+                    "ber": bit_error,
+                    "empirical_error_probability": bit_error,
+                    "nc": float(nc_binary(original, recovered)),
+                    "ser_4bit": float(binary_symbol_error_rate(original > 127, recovered > 127, 4)),
+                    "recovered_watermark_mse": float(mse(original, recovered)),
+                    "recovered_watermark_psnr": float(psnr(original, recovered)),
+                    "recovered_watermark_prd": float(prd(original, recovered)),
+                    "recovered_watermark_ssim": float(ssim_gray(original, recovered)),
+                    "embed_kernel_fps": embedding["kernel_fps"],
+                    "embed_algorithm_fps": embedding["algorithm_fps"],
+                    "embed_end_to_end_fps": embedding["end_to_end_fps"],
+                    "extract_kernel_fps": extraction["kernel_fps"],
+                    "extract_algorithm_fps": extraction["algorithm_fps"],
+                    "extract_end_to_end_fps": extraction["end_to_end_fps"],
+                    "payload_bits_per_second_embed": embedding["payload_bits_per_second"],
+                    "side_information_bytes_per_frame": embedding["side_information_bytes_per_frame"],
+                    "watermarked_video": str(output_video),
+                    "key_json": str(key_path),
+                    "recovered_watermark": str(recovered_path),
+                }
+            )
+
+    save_csv(out / "all_watermarks_video_summary.csv", rows)
+    save_json(
+        out / "all_watermarks_video_protocol.json",
+        {
+            "input_video": str(video),
+            "watermarks": [str(path) for path in watermark_paths],
+            "methods": list(COMMON_VIDEO_METHODS),
+            "excluded_image_method": "dct_spread_spectrum_cox1997",
+            "excluded_reason": (
+                "Cox is informed/non-blind and requires frame-specific original-host coefficients."
+            ),
+            "forced_psnr_calibration": False,
+            "common_ecc": False,
+            "proposal_configuration_sha256": proposal_hash,
+            "frames": args.max_frames,
+            "codec": args.codec,
+            "warmup_frames": args.warmup_frames,
+        },
+    )
+    print(f"Video benchmark complete: {out}")
+    print(f"Rows: {len(rows)}")
+
+
+if __name__ == "__main__":
+    main()
