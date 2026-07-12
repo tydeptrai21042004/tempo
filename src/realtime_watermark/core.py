@@ -47,11 +47,47 @@ def load_rgb(path: str | Path, mode: str = "full") -> np.ndarray:
 
 
 def load_binary_watermark(path: str | Path | None, size: int = 64, threshold: int = 127) -> np.ndarray:
+    """Load a non-degenerate binary watermark, preserving alpha-only logos.
+
+    Some transparent PNG logos store all visible structure in the alpha channel
+    while their RGB channels are uniformly black.  In that case converting
+    directly to luminance silently produces an all-zero payload.  This loader
+    selects the varying alpha channel only when RGB luminance is essentially
+    flat and alpha is informative, then rejects one-symbol payloads.
+    """
     if path is None:
-        return make_demo_watermark(size)
-    img = Image.open(path).convert("L").resize((size, size), Image.Resampling.NEAREST)
-    arr = np.asarray(img, dtype=np.uint8)
-    return np.where(arr >= threshold, 255, 0).astype(np.uint8)
+        binary = make_demo_watermark(size)
+    else:
+        source = Image.open(path)
+        gray_source = source.convert("L")
+        if "A" in source.getbands():
+            rgba = source.convert("RGBA")
+            rgb_gray = np.asarray(rgba.convert("RGB").convert("L"), dtype=np.uint8)
+            alpha = np.asarray(rgba.getchannel("A"), dtype=np.uint8)
+            if int(np.ptp(rgb_gray)) <= 1 and int(np.ptp(alpha)) > 1:
+                gray_source = Image.fromarray(alpha, mode="L")
+        img = gray_source.resize((size, size), Image.Resampling.NEAREST)
+        arr = np.asarray(img, dtype=np.uint8)
+        binary = np.where(arr >= threshold, 255, 0).astype(np.uint8)
+    if np.unique(binary).size < 2:
+        raise ValueError(
+            "Degenerate watermark payload: the binarized watermark contains only one bit value. "
+            "Use a watermark containing both black and white pixels."
+        )
+    return binary
+
+
+def watermark_statistics(watermark_binary: np.ndarray) -> dict[str, float | int]:
+    bits = (np.asarray(watermark_binary) > 127).astype(np.uint8).ravel()
+    ones = int(np.sum(bits))
+    zeros = int(bits.size - ones)
+    return {
+        "payload_bits": int(bits.size),
+        "zero_bits": zeros,
+        "one_bits": ones,
+        "one_fraction": float(ones / max(bits.size, 1)),
+        "bit_balance": float(min(zeros, ones) / max(zeros, ones, 1)),
+    }
 
 
 def make_demo_host(width: int = 1920, height: int = 1080) -> np.ndarray:
@@ -626,6 +662,95 @@ def attack_line_dropout(img: np.ndarray, every: int = 16, orientation: str = "ho
     return out
 
 
+
+def attack_chroma_subsample_420(img: np.ndarray) -> np.ndarray:
+    """Simulate 4:2:0 chroma subsampling while preserving luminance resolution."""
+    pil = Image.fromarray(np.asarray(img, dtype=np.uint8), mode="RGB").convert("YCbCr")
+    y, cb, cr = pil.split()
+    w, h = pil.size
+    small = (max(1, w // 2), max(1, h // 2))
+    cb = cb.resize(small, Image.Resampling.BILINEAR).resize((w, h), Image.Resampling.BILINEAR)
+    cr = cr.resize(small, Image.Resampling.BILINEAR).resize((w, h), Image.Resampling.BILINEAR)
+    return np.asarray(Image.merge("YCbCr", (y, cb, cr)).convert("RGB"), dtype=np.uint8)
+
+
+def attack_center_crop_resize(img: np.ndarray, keep_fraction: float = 0.90) -> np.ndarray:
+    arr = np.asarray(img, dtype=np.uint8)
+    h, w = arr.shape[:2]
+    keep = min(1.0, max(0.1, float(keep_fraction)))
+    ch, cw = max(1, int(round(h * keep))), max(1, int(round(w * keep)))
+    y0, x0 = (h - ch) // 2, (w - cw) // 2
+    crop = Image.fromarray(arr[y0:y0 + ch, x0:x0 + cw], mode="RGB")
+    return np.asarray(crop.resize((w, h), Image.Resampling.BICUBIC), dtype=np.uint8)
+
+
+def attack_perspective(img: np.ndarray, fraction: float = 0.02) -> np.ndarray:
+    """Small deterministic keystone warp using OpenCV when available."""
+    try:
+        import cv2  # type: ignore
+    except Exception:  # pragma: no cover
+        return attack_affine_shear(img, float(fraction))
+    arr = np.asarray(img, dtype=np.uint8)
+    h, w = arr.shape[:2]
+    dx, dy = float(w) * float(fraction), float(h) * float(fraction)
+    src = np.float32([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]])
+    dst = np.float32([[dx, dy], [w - 1 - dx, 0], [w - 1, h - 1 - dy], [0, h - 1]])
+    matrix = cv2.getPerspectiveTransform(src, dst)
+    return cv2.warpPerspective(arr, matrix, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT)
+
+
+def attack_local_blur(img: np.ndarray, fraction: float = 0.30, radius: float = 2.0) -> np.ndarray:
+    arr = np.asarray(img, dtype=np.uint8)
+    h, w = arr.shape[:2]
+    fh, fw = max(1, int(h * fraction)), max(1, int(w * fraction))
+    y0, x0 = (h - fh) // 2, (w - fw) // 2
+    out = arr.copy()
+    patch = Image.fromarray(out[y0:y0 + fh, x0:x0 + fw], mode="RGB").filter(ImageFilter.GaussianBlur(radius=float(radius)))
+    out[y0:y0 + fh, x0:x0 + fw] = np.asarray(patch, dtype=np.uint8)
+    return out
+
+
+def attack_overlay(img: np.ndarray, opacity: float = 0.18) -> np.ndarray:
+    base = Image.fromarray(np.asarray(img, dtype=np.uint8), mode="RGB").convert("RGBA")
+    overlay = Image.new("RGBA", base.size, (255, 255, 255, 0))
+    draw = ImageDraw.Draw(overlay)
+    w, h = base.size
+    alpha = int(np.clip(float(opacity), 0.0, 1.0) * 255)
+    draw.rectangle([w // 5, h // 3, 4 * w // 5, 2 * h // 3], fill=(32, 32, 32, alpha))
+    draw.line([0, h - 1, w - 1, 0], fill=(255, 255, 255, alpha), width=max(1, min(w, h) // 80))
+    return np.asarray(Image.alpha_composite(base, overlay).convert("RGB"), dtype=np.uint8)
+
+
+def attack_jpeg_chain(img: np.ndarray, quality_first: int = 85, quality_second: int = 70) -> np.ndarray:
+    return attack_jpeg(attack_jpeg(img, int(quality_first)), int(quality_second))
+
+
+def attack_screen_capture(img: np.ndarray) -> np.ndarray:
+    out = attack_chroma_subsample_420(img)
+    out = attack_resize(out, 0.85)
+    out = attack_gamma(out, 1.05)
+    return attack_jpeg(out, 70)
+
+
+def attack_print_scan(img: np.ndarray) -> np.ndarray:
+    out = attack_rotate(img, 0.35)
+    out = attack_blur(out, 0.45)
+    out = attack_gaussian(out, 1.0, seed=881)
+    return attack_brightness_contrast(out, 1.01, 0.98)
+
+
+def attack_category(name: str) -> str:
+    n = str(name).lower()
+    if n == "clean": return "clean"
+    if any(x in n for x in ("jpeg", "webp", "chroma420", "screen_capture")): return "compression"
+    if any(x in n for x in ("rotate", "translate", "resize", "crop", "affine", "perspective", "pixelate", "aspect")): return "geometric"
+    if any(x in n for x in ("blur", "median", "morph", "sharpen")): return "filtering"
+    if any(x in n for x in ("gaussian", "speckle", "poisson", "saltpepper", "noise")): return "noise"
+    if any(x in n for x in ("brightness", "contrast", "gamma", "saturation", "hue", "grayscale", "channel", "equalize", "posterize", "quantize")): return "photometric"
+    if any(x in n for x in ("cutout", "dropout", "overlay", "line_")): return "occlusion"
+    if "print_scan" in n: return "acquisition"
+    return "combined"
+
 def default_attacks(preset: str = "extended") -> list[tuple[str, Callable[[np.ndarray], np.ndarray]]]:
     """Reproducible attack suite.
 
@@ -703,6 +828,14 @@ def default_attacks(preset: str = "extended") -> list[tuple[str, Callable[[np.nd
         ("jpeg50_resize075", lambda x: attack_resize(attack_jpeg(x, 50), 0.75)),
         ("resize050_jpeg50", lambda x: attack_jpeg(attack_resize(x, 0.50), 50)),
         ("rotate1_jpeg70", lambda x: attack_jpeg(attack_rotate(x, 1.0), 70)),
+        ("chroma420", lambda x: attack_chroma_subsample_420(x)),
+        ("center_crop_resize90", lambda x: attack_center_crop_resize(x, 0.90)),
+        ("perspective002", lambda x: attack_perspective(x, 0.02)),
+        ("local_blur30", lambda x: attack_local_blur(x, 0.30, 2.0)),
+        ("overlay18", lambda x: attack_overlay(x, 0.18)),
+        ("jpeg85_jpeg70", lambda x: attack_jpeg_chain(x, 85, 70)),
+        ("screen_capture_light", lambda x: attack_screen_capture(x)),
+        ("print_scan_light", lambda x: attack_print_scan(x)),
     ]
     preset = str(preset).lower().strip()
     if preset in {"extended", "stress"}:
@@ -717,6 +850,7 @@ def default_attacks(preset: str = "extended") -> list[tuple[str, Callable[[np.nd
         "brightness105_contrast105", "gamma090", "crop_restore10",
         "y_noise_sigma1", "chroma_blur1", "morph_min3",
         "rotate1", "translate4_4", "jpeg70_gaussian1",
+        "chroma420", "center_crop_resize90", "jpeg85_jpeg70", "screen_capture_light",
     }
     if preset == "standard":
         return [(n, f) for n, f in attacks if n in standard]

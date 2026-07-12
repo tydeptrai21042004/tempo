@@ -6,6 +6,7 @@ from . import (
     dct_iss_malvar2003,
     ca_qim_a2_mao2024,
     dct_spread_spectrum_cox1997,
+    dew_langelaar2001,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "dct_iss_malvar2003",
     "ca_qim_a2_mao2024",
     "dct_spread_spectrum_cox1997",
+    "dew_langelaar2001",
 ]

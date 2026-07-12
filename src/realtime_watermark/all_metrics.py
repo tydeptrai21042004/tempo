@@ -10,8 +10,8 @@ import numpy as np
 
 from .baselines.dct_spread_spectrum_cox1997 import detection_statistics as cox_detection_statistics
 from .core import (
-    bit_accuracy, ber, default_attacks, load_binary_watermark, load_rgb,
-    nc_binary, psnr, save_csv, save_json, ssim_gray,
+    attack_category, bit_accuracy, ber, default_attacks, load_binary_watermark, load_rgb,
+    nc_binary, psnr, save_csv, save_json, ssim_gray, watermark_statistics,
 )
 from .native_metrics import (
     binary_symbol_error_rate, image_distortion_statistics, mse, prd,
@@ -102,6 +102,7 @@ def run_all_methods_all_metrics(
     out.mkdir(parents=True, exist_ok=True)
     selected = [normalize_method_id(x) for x in (methods or COMMON_IMAGE_METHODS)]
     wm = load_binary_watermark(watermark_path, size=int(wm_size))
+    wm_stats = watermark_statistics(wm)
     rows: list[dict[str, Any]] = []
     params_map = {normalize_method_id(k): dict(v) for k, v in (method_params_by_method or {}).items()}
     repeat_map = {normalize_method_id(k): v for k, v in (repeat_by_method or {}).items()}
@@ -135,11 +136,17 @@ def run_all_methods_all_metrics(
                     "watermark_label": watermark_label or Path(watermark_path).name if watermark_path else "generated",
                     "host": Path(host_path).name,
                     "attack": attack_name,
+                    "attack_category": attack_category(attack_name),
                     "detector_type": detector,
                     "fully_blind": detector == "blind",
                     "requires_original_host": detector == "non_blind",
                     "requires_image_dependent_side_information": detector in {"semi_blind", "non_blind"},
                     "payload_bits": int(wm.size),
+                    "payload_bits_per_pixel": int(wm.size) / max(host.shape[0] * host.shape[1], 1),
+                    "watermark_zero_bits": wm_stats["zero_bits"],
+                    "watermark_one_bits": wm_stats["one_bits"],
+                    "watermark_one_fraction": wm_stats["one_fraction"],
+                    "watermark_bit_balance": wm_stats["bit_balance"],
                     "step_or_alpha": float(key.step),
                     "repeat": int(key.repeat),
                     "key_bytes": _json_key_bytes(key),
@@ -147,6 +154,12 @@ def run_all_methods_all_metrics(
                     "clean_extract_ms": clean_extract_ms,
                     "embed_ms": embed_ms,
                     "extract_ms": extract_ms,
+                    "embed_fps": 1000.0 / max(embed_ms, 1e-9),
+                    "extract_fps": 1000.0 / max(extract_ms, 1e-9),
+                    "embed_payload_bps": int(wm.size) * 1000.0 / max(embed_ms, 1e-9),
+                    "extract_payload_bps": int(wm.size) * 1000.0 / max(extract_ms, 1e-9),
+                    "embed_megapixels_per_second": (host.shape[0] * host.shape[1]) / max(embed_ms, 1e-9) / 1000.0,
+                    "extract_megapixels_per_second": (host.shape[0] * host.shape[1]) / max(extract_ms, 1e-9) / 1000.0,
                     "bit_accuracy": bit_accuracy(wm, recovered),
                     "ber": ber(wm, recovered),
                     "empirical_error_probability": ber(wm, recovered),
@@ -168,7 +181,41 @@ def run_all_methods_all_metrics(
                 rows.append(row)
 
     applicability = metric_applicability_rows(selected)
+    summary_rows: list[dict[str, Any]] = []
+    groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault((str(row["method_id"]), str(row["host"]), str(row["watermark_label"])), []).append(row)
+    for (method_id, host_name, wm_name), group in groups.items():
+        non_clean = [r for r in group if r["attack"] != "clean"]
+        ncs = np.asarray([float(r["nc_bipolar"]) for r in non_clean], dtype=np.float64)
+        bers = np.asarray([float(r["ber"]) for r in non_clean], dtype=np.float64)
+        worst = min(non_clean, key=lambda r: float(r["nc_bipolar"])) if non_clean else {"attack": ""}
+        first = group[0]
+        summary_rows.append({
+            "method_id": method_id,
+            "host": host_name,
+            "watermark_label": wm_name,
+            "payload_bits": first["payload_bits"],
+            "embedding_psnr": first["embedding_psnr"],
+            "embedding_ssim": first["embedding_ssim"],
+            "clean_bit_accuracy": first["clean_bit_accuracy"],
+            "embed_ms": first["embed_ms"],
+            "clean_extract_ms": first["clean_extract_ms"],
+            "embed_fps": first["embed_fps"],
+            "min_attack_nc": float(np.min(ncs)) if non_clean else float("nan"),
+            "p10_attack_nc": float(np.percentile(ncs, 10)) if non_clean else float("nan"),
+            "median_attack_nc": float(np.median(ncs)) if non_clean else float("nan"),
+            "mean_attack_nc": float(np.mean(ncs)) if non_clean else float("nan"),
+            "std_attack_nc": float(np.std(ncs)) if non_clean else float("nan"),
+            "success_rate_nc_ge_050": float(np.mean(ncs >= 0.50)) if non_clean else float("nan"),
+            "success_rate_nc_ge_070": float(np.mean(ncs >= 0.70)) if non_clean else float("nan"),
+            "success_rate_nc_ge_090": float(np.mean(ncs >= 0.90)) if non_clean else float("nan"),
+            "max_attack_ber": float(np.max(bers)) if non_clean else float("nan"),
+            "p90_attack_ber": float(np.percentile(bers, 90)) if non_clean else float("nan"),
+            "worst_attack": worst["attack"],
+        })
     save_csv(out / "all_methods_all_metrics.csv", rows)
+    save_csv(out / "all_methods_summary.csv", summary_rows)
     save_csv(out / "metric_applicability.csv", applicability)
     protocol = {
         "protocol_version": ALL_METRICS_PROTOCOL_VERSION,
@@ -184,9 +231,10 @@ def run_all_methods_all_metrics(
         "detector_types": {m: _detector_type(m) for m in selected},
         "method_params_supplied": sorted(params_map),
         "watermark_label": watermark_label or (Path(watermark_path).name if watermark_path else "generated"),
+        "watermark_statistics": wm_stats,
     }
     save_json(out / "all_metrics_protocol.json", protocol)
-    return {"rows": rows, "applicability": applicability, "protocol": protocol}
+    return {"rows": rows, "summary": summary_rows, "applicability": applicability, "protocol": protocol}
 
 
 __all__ = [

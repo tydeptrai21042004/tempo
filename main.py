@@ -23,7 +23,7 @@ def parse_methods(s: str):
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Five-method blind watermarking benchmark with four reproducible baselines and JILP-QIM.")
+    p = argparse.ArgumentParser(description="Watermarking benchmark with six paper-supported baselines and JILP-QIM.")
     p.add_argument("--host", default=None, help="RGB host image path. If omitted, a deterministic demo host is generated.")
     p.add_argument("--watermark", default=None, help="Binary watermark image path. If omitted, a deterministic demo watermark is generated.")
     p.add_argument("--mode", choices=["512", "full"], default="full", help="Resize host to 512x512 or use native/full size, e.g. 1920x1080.")

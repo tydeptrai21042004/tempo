@@ -34,8 +34,10 @@ def test_quick_all_metrics_has_complete_schema(tmp_path: Path):
         "attacked_vs_host_mse", "attacked_vs_host_psnr", "attacked_vs_host_prd",
         "attacked_vs_host_ssim", "embed_ms", "extract_ms", "native_detection_metric",
         "native_detection_value", "detector_type", "key_bytes",
+        "attack_category", "embed_fps", "extract_fps", "payload_bits_per_pixel",
     }
     assert all(required <= set(row) for row in result["rows"])
     assert (tmp_path / "all_methods_all_metrics.csv").exists()
     assert (tmp_path / "metric_applicability.csv").exists()
+    assert (tmp_path / "all_methods_summary.csv").exists()
     assert (tmp_path / "all_metrics_protocol.json").exists()

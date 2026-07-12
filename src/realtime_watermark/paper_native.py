@@ -98,6 +98,14 @@ NATIVE_DISCLOSURES = {
         paper_attack_model="Gaussian, salt, pepper, mixed salt-pepper, and speckle noise",
         native_parameter_policy="R=1/2/3 capacity grid, R=2 SER track, P(bit=0)=0.9, fixed lattice scale; no PSNR calibration",
     ),
+    "dew_langelaar2001": NativeDisclosure(
+        method_id="dew_langelaar2001",
+        detector_type="blind",
+        native_domain="keyed regions of 8x8 luminance-DCT blocks",
+        paper_metric="label recovery, visual distortion, payload, and processing throughput",
+        paper_attack_model="JPEG/MPEG coefficient loss and aligned compressed-video processing",
+        native_parameter_policy="paper-zeroing and disclosed minimum-energy-removal decoded-frame profiles",
+    ),
 }
 
 

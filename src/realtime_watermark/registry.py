@@ -12,6 +12,7 @@ from .baselines import (
     dct_iss_malvar2003,
     ca_qim_a2_mao2024,
     dct_spread_spectrum_cox1997,
+    dew_langelaar2001,
 )
 from .proposals.jilp_qim import method as proposal_method
 from .paper_fidelity import fidelity_status
@@ -22,6 +23,7 @@ METHOD_MODULES = {
     dct_iss_malvar2003.METHOD_ID: dct_iss_malvar2003,
     ca_qim_a2_mao2024.METHOD_ID: ca_qim_a2_mao2024,
     dct_spread_spectrum_cox1997.METHOD_ID: dct_spread_spectrum_cox1997,
+    dew_langelaar2001.METHOD_ID: dew_langelaar2001,
     proposal_method.METHOD_ID: proposal_method,
 }
 
@@ -33,6 +35,8 @@ METHOD_ALIASES: dict[str, str] = {
     "ca_qim": ca_qim_a2_mao2024.METHOD_ID,
     "cox": dct_spread_spectrum_cox1997.METHOD_ID,
     "cox_ss": dct_spread_spectrum_cox1997.METHOD_ID,
+    "dew": dew_langelaar2001.METHOD_ID,
+    "differential_energy": dew_langelaar2001.METHOD_ID,
     "jilp_qim": proposal_method.METHOD_ID,
 }
 
@@ -42,10 +46,21 @@ BASELINE_METHODS = [
     dct_iss_malvar2003.METHOD_ID,
     ca_qim_a2_mao2024.METHOD_ID,
     dct_spread_spectrum_cox1997.METHOD_ID,
+    dew_langelaar2001.METHOD_ID,
 ]
 PROPOSAL_METHOD = proposal_method.METHOD_ID
-PAPER_NATIVE_METHODS: list[str] = list(BASELINE_METHODS)
-COMMON_IMAGE_METHODS = [*BASELINE_METHODS, PROPOSAL_METHOD]
+# Existing 4096-bit common image/video protocols are intentionally unchanged:
+# paper-style DEW requires at least two DCT blocks per bit.  DEW is evaluated
+# in the new 256-bit online stream pipeline and remains directly callable for
+# lower-payload image experiments.
+PAPER_NATIVE_METHODS: list[str] = [
+    dct_dm_qim_chen2001.METHOD_ID,
+    dct_stdm_qim_chen2001.METHOD_ID,
+    dct_iss_malvar2003.METHOD_ID,
+    ca_qim_a2_mao2024.METHOD_ID,
+    dct_spread_spectrum_cox1997.METHOD_ID,
+]
+COMMON_IMAGE_METHODS = [*PAPER_NATIVE_METHODS, PROPOSAL_METHOD]
 COMMON_VIDEO_METHODS = [
     dct_dm_qim_chen2001.METHOD_ID,
     dct_stdm_qim_chen2001.METHOD_ID,
@@ -53,9 +68,17 @@ COMMON_VIDEO_METHODS = [
     ca_qim_a2_mao2024.METHOD_ID,
     PROPOSAL_METHOD,
 ]
+STREAM_BENCHMARK_METHODS = [
+    dct_dm_qim_chen2001.METHOD_ID,
+    dct_stdm_qim_chen2001.METHOD_ID,
+    dct_iss_malvar2003.METHOD_ID,
+    ca_qim_a2_mao2024.METHOD_ID,
+    dew_langelaar2001.METHOD_ID,
+    PROPOSAL_METHOD,
+]
 DIAGNOSTIC_METHODS: list[str] = []
 IMAGE_BENCHMARK_METHODS = list(COMMON_IMAGE_METHODS)
-ALL_METHODS = list(COMMON_IMAGE_METHODS)
+ALL_METHODS = [*BASELINE_METHODS, PROPOSAL_METHOD]
 ALL_PUBLIC_METHOD_IDS = sorted(set(ALL_METHODS) | set(METHOD_ALIASES))
 
 
@@ -193,7 +216,7 @@ def method_metadata() -> list[dict[str, Any]]:
 
 __all__ = [
     "METHOD_MODULES", "BASELINE_METHODS", "PROPOSAL_METHOD", "PAPER_NATIVE_METHODS",
-    "COMMON_IMAGE_METHODS", "COMMON_VIDEO_METHODS", "DIAGNOSTIC_METHODS",
+    "COMMON_IMAGE_METHODS", "COMMON_VIDEO_METHODS", "STREAM_BENCHMARK_METHODS", "DIAGNOSTIC_METHODS",
     "IMAGE_BENCHMARK_METHODS", "ALL_METHODS", "ALL_PUBLIC_METHOD_IDS", "METHOD_REFS",
     "METHOD_ALIASES", "normalize_method_id", "embed", "prepare_embedding",
     "embed_prepared", "extract", "method_metadata",

@@ -1,0 +1,27 @@
+LIVE-STREAM BENCHMARK
+
+Quick Kaggle-compatible virtual-arrival run:
+  ./run.sh stream --workdir reports/live_stream --frames 120 \
+    --resolutions 512x512 --target-fps 30 --channels clean,jpeg70 \
+    --wm-size 16 --pace-mode virtual
+
+Wall-clock paced run:
+  ./run.sh stream --workdir reports/live_stream_realtime --frames 120 \
+    --resolutions 512x512 --target-fps 30 --channels clean,jpeg70 \
+    --wm-size 16 --pace-mode realtime
+
+Kaggle wrapper:
+  ./kaggle.sh stream --workdir /kaggle/working/live_stream \
+    --frames 120 --resolutions 512x512,1280x720 \
+    --target-fps 30 --channels clean,jpeg70 --wm-size 16
+
+Main outputs:
+  ALL_STREAM_realtime_summary.csv
+  ALL_STREAM_realtime_trace.csv
+  ALL_STREAM_calibration.csv
+  ALL_STREAM_run_manifest.json
+
+DEW uses paper-style keyed differential-energy regions and requires at least
+two 8x8 DCT blocks per bit. The stream benchmark therefore uses a 16x16
+watermark (256 bits) by default. Existing 4096-bit image/video protocols are
+left unchanged and do not silently reduce their payload.

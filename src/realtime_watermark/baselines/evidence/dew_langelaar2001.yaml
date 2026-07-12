@@ -1,0 +1,27 @@
+method_id: dew_langelaar2001
+source:
+  title: "Optimal Differential Energy Watermarking of DCT Encoded Images and Video"
+  doi: "10.1109/83.892451"
+paper_native_track:
+  domain: keyed regions of 8x8 luminance DCT blocks in aligned JPEG/MPEG-style frames
+  attacks: [aligned_JPEG_recompression, aligned_noise, aligned_filtering]
+  metrics: [bit_error_rate, normalized_correlation, PSNR, throughput, deadline_latency]
+  detector_type: blind
+  psnr_calibration: true
+  common_ecc: false
+implementation_scope:
+  exact:
+    - keyed block permutation
+    - two energy subregions per label bit
+    - differential detector D equals E_A minus E_B
+    - paper coefficient-zeroing mode
+  declared_adapter:
+    - decoded RGB frame DCT rather than direct compressed coefficient parsing
+    - minimum-energy-removal mode for PSNR-controlled streaming comparison
+protocol:
+  blind: true
+  minimum_blocks_per_bit: 2
+  default_stream_payload_bits: 256
+  schedule: seed_regenerated
+  stream_alignment: fixed_geometry
+primary_stream_protocol_eligible: true

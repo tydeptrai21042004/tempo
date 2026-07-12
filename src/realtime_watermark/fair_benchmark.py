@@ -19,6 +19,7 @@ from .common.timing import (
     summarize_ms,
 )
 from .core import (
+    attack_category,
     bit_accuracy,
     ber,
     default_attacks,
@@ -30,6 +31,7 @@ from .core import (
     save_csv,
     save_json,
     ssim_gray,
+    watermark_statistics,
 )
 from .methods import extract, warmup_numba
 from .paper_fidelity import common_primary_static_eligible, fidelity_status, fidelity_tier
@@ -42,6 +44,7 @@ STEP_BOUNDS: dict[str, tuple[float, float]] = {
     "dct_stdm_qim_chen2001": (1.0, 160.0),
     "dct_iss_malvar2003": (0.25, 80.0),
     "ca_qim_a2_mao2024": (1.0, 160.0),
+    "dew_langelaar2001": (50.0, 10000.0),
     "proposal": (0.5, 100.0),
 }
 
@@ -278,6 +281,7 @@ def run_fair_compare(
         raise ValueError("Calibration and evaluation hosts must be disjoint; an identical SHA-256 hash was found.")
 
     wm = load_binary_watermark(watermark_path, size=wm_size)
+    wm_stats = watermark_statistics(wm)
     selected = IMAGE_BENCHMARK_METHODS if not methods or "all" in methods else [normalize_method_id(x) for x in methods]
     if not include_secondary_nonexact:
         selected = [m for m in selected if common_primary_static_eligible(m)]
@@ -384,6 +388,7 @@ def run_fair_compare(
                 "fidelity_tier": fidelity_tier(method_id),
                 "primary_rank_eligible": eligible,
                 "phase": attack_name,
+                "attack_category": attack_category(attack_name),
                 "target_psnr": float(target_psnr),
                 "frozen_step": float(step),
                 "configuration_sha256": config_hash,
@@ -394,11 +399,15 @@ def run_fair_compare(
                 "bit_accuracy": bit_accuracy(wm, rec),
                 "ber": ber(wm, rec),
                 "extract_ms": (a1 - a0) / 1_000_000.0,
+                "extract_fps": 1_000_000_000.0 / max(a1 - a0, 1),
             }
             attack_rows.append(row)
             method_attack_rows.append(row)
 
         non_clean = [r for r in method_attack_rows if r["phase"] != "clean"]
+        attack_ncs = np.asarray([r["nc_bipolar"] for r in non_clean], dtype=np.float64)
+        attack_bers = np.asarray([r["ber"] for r in non_clean], dtype=np.float64)
+        worst_row = min(non_clean, key=lambda r: r["nc_bipolar"]) if non_clean else {"phase": ""}
         fidelity = fidelity_status(method_id)
         summary_rows.append({
             "schema_version": "2.0",
@@ -415,6 +424,11 @@ def run_fair_compare(
             "verified_capacity": fidelity["verified_capacity"],
             "host_shape": f"{host.shape[1]}x{host.shape[0]}",
             "payload_bits": payload_bits,
+            "payload_bits_per_pixel": payload_bits / max(host.shape[0] * host.shape[1], 1),
+            "watermark_zero_bits": wm_stats["zero_bits"],
+            "watermark_one_bits": wm_stats["one_bits"],
+            "watermark_one_fraction": wm_stats["one_fraction"],
+            "watermark_bit_balance": wm_stats["bit_balance"],
             "target_psnr": float(target_psnr),
             "psnr_tolerance": float(psnr_tolerance),
             "calibrated_step_frozen": float(step),
@@ -456,9 +470,18 @@ def run_fair_compare(
             "process_cumulative_peak_rss_mb": _peak_rss_mb(),
             "fully_blind": bool(key.fully_blind),
             "side_information": key.side_information,
-            "min_attack_nc_bipolar": min((float(r["nc_bipolar"]) for r in non_clean), default=float("nan")),
-            "mean_attack_nc_bipolar": float(np.mean([r["nc_bipolar"] for r in non_clean])) if non_clean else float("nan"),
-            "max_attack_ber": max((float(r["ber"]) for r in non_clean), default=float("nan")),
+            "min_attack_nc_bipolar": float(np.min(attack_ncs)) if non_clean else float("nan"),
+            "p10_attack_nc_bipolar": float(np.percentile(attack_ncs, 10)) if non_clean else float("nan"),
+            "p25_attack_nc_bipolar": float(np.percentile(attack_ncs, 25)) if non_clean else float("nan"),
+            "median_attack_nc_bipolar": float(np.median(attack_ncs)) if non_clean else float("nan"),
+            "mean_attack_nc_bipolar": float(np.mean(attack_ncs)) if non_clean else float("nan"),
+            "std_attack_nc_bipolar": float(np.std(attack_ncs)) if non_clean else float("nan"),
+            "success_rate_nc_ge_050": float(np.mean(attack_ncs >= 0.50)) if non_clean else float("nan"),
+            "success_rate_nc_ge_070": float(np.mean(attack_ncs >= 0.70)) if non_clean else float("nan"),
+            "success_rate_nc_ge_090": float(np.mean(attack_ncs >= 0.90)) if non_clean else float("nan"),
+            "worst_attack": worst_row["phase"],
+            "max_attack_ber": float(np.max(attack_bers)) if non_clean else float("nan"),
+            "p90_attack_ber": float(np.percentile(attack_bers, 90)) if non_clean else float("nan"),
             # Backward-compatible columns.
             "embed_ms": total_dist.median_ms,
             "extract_ms": sync_dist.median_ms,
@@ -481,6 +504,7 @@ def run_fair_compare(
         "schema_version": "2.0",
         "protocol": "multi-host held-out calibration plus frozen matched-distortion evaluation",
         "payload_bits": int(wm.size),
+        "watermark_statistics": wm_stats,
         "repeat": 1,
         "same_host_calibration_forbidden": True,
         "target_psnr": float(target_psnr),

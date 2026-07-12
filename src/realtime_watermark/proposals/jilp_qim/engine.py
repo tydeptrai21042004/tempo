@@ -6,6 +6,11 @@ import numpy as np
 from PIL import Image
 
 try:
+    from numba import prange
+except Exception:  # pragma: no cover
+    prange = range
+
+try:
     import cv2
     CV2_AVAILABLE = True
 except Exception:  # pragma: no cover
@@ -190,7 +195,7 @@ def _embed_one_carrier_center(host, out, indices, bits, ba, bb, step, rho, w_cro
                 out[rr, cc, 1] = np.uint8(np.rint(val1))
                 out[rr, cc, 2] = np.uint8(np.rint(val2))
 
-@njit(cache=True, fastmath=True)
+@njit(cache=True, fastmath=True, parallel=True)
 def _embed_one_carrier_jilp(out, indices, bits, ba, bb, step, rho, w_crop, block_size, eta):
     """One-pass bounded-integer lattice projection.
 
@@ -208,10 +213,11 @@ def _embed_one_carrier_jilp(out, indices, bits, ba, bb, step, rho, w_crop, block
     p0 = g0 / gg
     p1 = g1 / gg
     p2 = g2 / gg
-    corrections = 0
-    unresolved = 0
+    corrections_per_block = np.zeros(n, dtype=np.int64)
+    unresolved_per_block = np.zeros(n, dtype=np.int64)
 
-    for k in range(n):
+    for k in prange(n):
+        block_corrections = 0
         idx = int(indices[k])
         r0 = (idx // bc) * bs
         c0 = (idx % bc) * bs
@@ -227,7 +233,12 @@ def _embed_one_carrier_jilp(out, indices, bits, ba, bb, step, rho, w_crop, block
         v = 0.5 * (ca - cb)
         target = _project_qim_margin(v, step, int(bits[k]), rho)
         delta = target - v
+        # Track the exact carrier of the final bounded uint8 samples while they
+        # are written. This preserves the original arithmetic order but removes
+        # the separate post-write block rescan.
         if abs(delta) > 1e-9:
+            ca2 = 0.0
+            cb2 = 0.0
             for i in range(bs):
                 for j in range(bs):
                     d = delta * (ba[i, j] - bb[i, j])
@@ -248,21 +259,18 @@ def _embed_one_carrier_jilp(out, indices, bits, ba, bb, step, rho, w_crop, block
                         x2 = 0.0
                     elif x2 > 255.0:
                         x2 = 255.0
-                    out[rr, cc, 0] = np.uint8(np.rint(x0))
-                    out[rr, cc, 1] = np.uint8(np.rint(x1))
-                    out[rr, cc, 2] = np.uint8(np.rint(x2))
-
-        # Close the constraint on the final bounded uint8 pixels.
-        ca2 = 0.0
-        cb2 = 0.0
-        for i in range(bs):
-            for j in range(bs):
-                rr = r0 + i
-                cc = c0 + j
-                f = _field_rgb(out[rr, cc, 0], out[rr, cc, 1], out[rr, cc, 2], eta)
-                ca2 += f * ba[i, j]
-                cb2 += f * bb[i, j]
-        va = 0.5 * (ca2 - cb2)
+                    q0 = np.uint8(np.rint(x0))
+                    q1 = np.uint8(np.rint(x1))
+                    q2 = np.uint8(np.rint(x2))
+                    out[rr, cc, 0] = q0
+                    out[rr, cc, 1] = q1
+                    out[rr, cc, 2] = q2
+                    f2 = _field_rgb(q0, q1, q2, eta)
+                    ca2 += f2 * ba[i, j]
+                    cb2 += f2 * bb[i, j]
+            va = 0.5 * (ca2 - cb2)
+        else:
+            va = v
         guard = 0.08 * step
         solved = False
         for _it in range(64):
@@ -304,15 +312,16 @@ def _embed_one_carrier_jilp(out, indices, bits, ba, bb, step, rho, w_crop, block
             cc = c0 + best_j
             out[rr, cc, best_c] = np.uint8(int(out[rr, cc, best_c]) + best_dir)
             va += best_s * best_dir
-            corrections += 1
+            block_corrections += 1
 
         if not solved:
             qcur = int(np.rint(va / step))
             if (qcur & 1) != int(bits[k]):
-                unresolved += 1
-    return corrections, unresolved
+                unresolved_per_block[k] = 1
+        corrections_per_block[k] = block_corrections
+    return int(np.sum(corrections_per_block)), int(np.sum(unresolved_per_block))
 
-@njit(cache=True, fastmath=True)
+@njit(cache=True, fastmath=True, parallel=True)
 def _embed_one_carrier_jilp_center(out, indices, bits, ba, bb, step, rho, w_crop, block_size, eta):
     """One-pass bounded-integer lattice projection.
 
@@ -330,10 +339,11 @@ def _embed_one_carrier_jilp_center(out, indices, bits, ba, bb, step, rho, w_crop
     p0 = g0 / gg
     p1 = g1 / gg
     p2 = g2 / gg
-    corrections = 0
-    unresolved = 0
+    corrections_per_block = np.zeros(n, dtype=np.int64)
+    unresolved_per_block = np.zeros(n, dtype=np.int64)
 
-    for k in range(n):
+    for k in prange(n):
+        block_corrections = 0
         idx = int(indices[k])
         r0 = (idx // bc) * bs
         c0 = (idx % bc) * bs
@@ -349,7 +359,12 @@ def _embed_one_carrier_jilp_center(out, indices, bits, ba, bb, step, rho, w_crop
         v = 0.5 * (ca - cb)
         target = _project_qim_center(v, step, int(bits[k]))
         delta = target - v
+        # Track the exact carrier of the final bounded uint8 samples while they
+        # are written. This preserves the original arithmetic order but removes
+        # the separate post-write block rescan.
         if abs(delta) > 1e-9:
+            ca2 = 0.0
+            cb2 = 0.0
             for i in range(bs):
                 for j in range(bs):
                     d = delta * (ba[i, j] - bb[i, j])
@@ -370,21 +385,18 @@ def _embed_one_carrier_jilp_center(out, indices, bits, ba, bb, step, rho, w_crop
                         x2 = 0.0
                     elif x2 > 255.0:
                         x2 = 255.0
-                    out[rr, cc, 0] = np.uint8(np.rint(x0))
-                    out[rr, cc, 1] = np.uint8(np.rint(x1))
-                    out[rr, cc, 2] = np.uint8(np.rint(x2))
-
-        # Close the constraint on the final bounded uint8 pixels.
-        ca2 = 0.0
-        cb2 = 0.0
-        for i in range(bs):
-            for j in range(bs):
-                rr = r0 + i
-                cc = c0 + j
-                f = _field_rgb(out[rr, cc, 0], out[rr, cc, 1], out[rr, cc, 2], eta)
-                ca2 += f * ba[i, j]
-                cb2 += f * bb[i, j]
-        va = 0.5 * (ca2 - cb2)
+                    q0 = np.uint8(np.rint(x0))
+                    q1 = np.uint8(np.rint(x1))
+                    q2 = np.uint8(np.rint(x2))
+                    out[rr, cc, 0] = q0
+                    out[rr, cc, 1] = q1
+                    out[rr, cc, 2] = q2
+                    f2 = _field_rgb(q0, q1, q2, eta)
+                    ca2 += f2 * ba[i, j]
+                    cb2 += f2 * bb[i, j]
+            va = 0.5 * (ca2 - cb2)
+        else:
+            va = v
         guard = 0.08 * step
         solved = False
         for _it in range(64):
@@ -426,13 +438,14 @@ def _embed_one_carrier_jilp_center(out, indices, bits, ba, bb, step, rho, w_crop
             cc = c0 + best_j
             out[rr, cc, best_c] = np.uint8(int(out[rr, cc, best_c]) + best_dir)
             va += best_s * best_dir
-            corrections += 1
+            block_corrections += 1
 
         if not solved:
             qcur = int(np.rint(va / step))
             if (qcur & 1) != int(bits[k]):
-                unresolved += 1
-    return corrections, unresolved
+                unresolved_per_block[k] = 1
+        corrections_per_block[k] = block_corrections
+    return int(np.sum(corrections_per_block)), int(np.sum(unresolved_per_block))
 
 @njit(cache=True, fastmath=True)
 def _extract_one_carrier_bits(img, indices, ba, bb, step, w_crop, block_size, eta, off_y, off_x):
@@ -457,7 +470,35 @@ def _extract_one_carrier_bits(img, indices, ba, bb, step, w_crop, block_size, et
         out_bits[k] = np.uint8(int(np.rint(v / step)) & 1)
     return out_bits
 
-@njit(cache=True, fastmath=True)
+@njit(cache=True, fastmath=True, parallel=True)
+def _extract_one_carrier_bits_parallel(img, indices, ba, bb, step, w_crop, block_size, eta, off_y, off_x):
+    """Output-equivalent block-parallel payload extraction.
+
+    Each block keeps the original accumulation order; only independent block
+    evaluations are scheduled concurrently.
+    """
+    n = indices.shape[0]
+    bs = block_size
+    bc = (w_crop - off_x) // bs
+    out_bits = np.empty(n, dtype=np.uint8)
+    for k in prange(n):
+        idx = int(indices[k])
+        r0 = off_y + (idx // bc) * bs
+        c0 = off_x + (idx % bc) * bs
+        ca = 0.0
+        cb = 0.0
+        for i in range(bs):
+            for j in range(bs):
+                rr = r0 + i
+                cc = c0 + j
+                f = _field_rgb(img[rr, cc, 0], img[rr, cc, 1], img[rr, cc, 2], eta)
+                ca += f * ba[i, j]
+                cb += f * bb[i, j]
+        v = 0.5 * (ca - cb)
+        out_bits[k] = np.uint8(int(np.rint(v / step)) & 1)
+    return out_bits
+
+@njit(cache=True, fastmath=True, parallel=True)
 def _extract_one_carrier_bits_shift(img, indices, ba, bb, step, w_crop, block_size, eta, off_y, off_x, sy, sx):
     n = indices.shape[0]
     bs = block_size
@@ -465,7 +506,7 @@ def _extract_one_carrier_bits_shift(img, indices, ba, bb, step, w_crop, block_si
     h = img.shape[0]
     w = img.shape[1]
     out_bits = np.empty(n, dtype=np.uint8)
-    for k in range(n):
+    for k in prange(n):
         idx = int(indices[k])
         r0 = off_y + (idx // bc) * bs
         c0 = off_x + (idx % bc) * bs

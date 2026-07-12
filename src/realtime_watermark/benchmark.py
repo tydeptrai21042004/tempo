@@ -10,8 +10,8 @@ import time
 import numpy as np
 
 from .core import (
-    bit_accuracy, ber, default_attacks, load_binary_watermark, load_rgb, make_demo_host,
-    nc_binary, psnr, save_csv, save_image, save_json, ssim_gray,
+    attack_category, bit_accuracy, ber, default_attacks, load_binary_watermark, load_rgb, make_demo_host,
+    nc_binary, psnr, save_csv, save_image, save_json, ssim_gray, watermark_statistics,
 )
 from .methods import ALL_METHODS, METHOD_REFS, METHOD_ALIASES, normalize_method_id, embed, extract, method_metadata, warmup_numba, used_units_from_key
 from .registry import IMAGE_BENCHMARK_METHODS
@@ -46,6 +46,7 @@ def run_compare(
         host_label = str(host_path)
     wm = load_binary_watermark(watermark_path, size=wm_size)
     wm_label = "demo" if watermark_path is None else str(watermark_path)
+    wm_stats = watermark_statistics(wm)
     methods = methods or IMAGE_BENCHMARK_METHODS
     if "all" in methods:
         methods = IMAGE_BENCHMARK_METHODS
@@ -110,8 +111,12 @@ def run_compare(
         if save_images:
             save_image(mdir / "watermarked.png", watermarked)
             save_image(mdir / "extracted_clean.png", rec_clean)
-        save_json(mdir / "key.json", asdict(key))
-        keys[method_id] = asdict(key)
+        key_dict = asdict(key)
+        save_json(mdir / "key.json", key_dict)
+        keys[method_id] = key_dict
+        key_bytes = len(json.dumps(key_dict, separators=(",", ":"), default=str).encode("utf-8"))
+        pixels = int(host.shape[0] * host.shape[1])
+        payload_bits = int(wm.size)
 
         method_attack_rows: list[dict[str, Any]] = []
         for attack_name, attack_fn in default_attacks(attack_preset):
@@ -132,6 +137,7 @@ def run_compare(
                 "fidelity_tier": fidelity_tier(method_id),
                 "primary_rank_eligible": primary_eligible,
                 "phase": attack_name,
+                "attack_category": attack_category(attack_name),
                 "host_mode": mode,
                 "host_shape": f"{host.shape[1]}x{host.shape[0]}",
                 "repeat_effective": key.repeat,
@@ -147,6 +153,12 @@ def run_compare(
                 "extract_ms": (e1 - e0) * 1000.0,
                 "attack_ms": attack_ms,
                 "embed_fps": 1000.0 / max(embed_ms, 1e-9),
+                "extract_fps": 1000.0 / max((e1 - e0) * 1000.0, 1e-9),
+                "payload_bits": payload_bits,
+                "payload_bits_per_pixel": payload_bits / max(pixels, 1),
+                "embed_payload_bps": payload_bits * 1000.0 / max(embed_ms, 1e-9),
+                "extract_payload_bps": payload_bits / max(e1 - e0, 1e-12),
+                "key_bytes": key_bytes,
             }
             attack_rows.append(row)
             method_attack_rows.append(row)
@@ -154,6 +166,9 @@ def run_compare(
                 save_image(mdir / f"extracted_{attack_name}.png", rec)
 
         non_clean = [r for r in method_attack_rows if r["phase"] != "clean"]
+        attack_ncs = np.asarray([r["nc_bipolar"] for r in non_clean], dtype=np.float64)
+        attack_bers = np.asarray([r["ber"] for r in non_clean], dtype=np.float64)
+        worst_row = min(non_clean, key=lambda r: r["nc_bipolar"])
         summary_rows.append({
             "method_id": method_id,
             "display_name": METHOD_REFS[method_id].display_name,
@@ -167,6 +182,13 @@ def run_compare(
             "host_shape": f"{host.shape[1]}x{host.shape[0]}",
             "repeat_effective": key.repeat,
             "used_blocks_or_coeffs": used_units_from_key(key),
+            "payload_bits": payload_bits,
+            "payload_bits_per_pixel": payload_bits / max(pixels, 1),
+            "watermark_zero_bits": wm_stats["zero_bits"],
+            "watermark_one_bits": wm_stats["one_bits"],
+            "watermark_one_fraction": wm_stats["one_fraction"],
+            "watermark_bit_balance": wm_stats["bit_balance"],
+            "key_bytes": key_bytes,
             "watermarked_psnr": wpsnr,
             "watermarked_ssim": wssim,
             "clean_nc_bipolar": clean_nc,
@@ -175,9 +197,23 @@ def run_compare(
             "embed_ms": embed_ms,
             "extract_clean_ms": clean_extract_ms,
             "embed_fps": 1000.0 / max(embed_ms, 1e-9),
-            "min_attack_nc_bipolar": min(r["nc_bipolar"] for r in non_clean),
-            "avg_attack_nc_bipolar": float(np.mean([r["nc_bipolar"] for r in non_clean])) ,
-            "max_attack_ber": max(r["ber"] for r in non_clean),
+            "extract_clean_fps": 1000.0 / max(clean_extract_ms, 1e-9),
+            "embed_megapixels_per_second": pixels / max(embed_ms, 1e-9) / 1000.0,
+            "extract_megapixels_per_second": pixels / max(clean_extract_ms, 1e-9) / 1000.0,
+            "embed_payload_bps": payload_bits * 1000.0 / max(embed_ms, 1e-9),
+            "extract_payload_bps": payload_bits * 1000.0 / max(clean_extract_ms, 1e-9),
+            "min_attack_nc_bipolar": float(np.min(attack_ncs)),
+            "p10_attack_nc_bipolar": float(np.percentile(attack_ncs, 10)),
+            "p25_attack_nc_bipolar": float(np.percentile(attack_ncs, 25)),
+            "median_attack_nc_bipolar": float(np.median(attack_ncs)),
+            "avg_attack_nc_bipolar": float(np.mean(attack_ncs)),
+            "std_attack_nc_bipolar": float(np.std(attack_ncs)),
+            "success_rate_nc_ge_050": float(np.mean(attack_ncs >= 0.50)),
+            "success_rate_nc_ge_070": float(np.mean(attack_ncs >= 0.70)),
+            "success_rate_nc_ge_090": float(np.mean(attack_ncs >= 0.90)),
+            "worst_attack": worst_row["phase"],
+            "max_attack_ber": float(np.max(attack_bers)),
+            "p90_attack_ber": float(np.percentile(attack_bers, 90)),
         })
 
     save_csv(out / "per_attack_results.csv", attack_rows)
@@ -190,6 +226,7 @@ def run_compare(
         "host_shape": list(host.shape),
         "watermark": wm_label,
         "watermark_shape": list(wm.shape),
+        "watermark_statistics": wm_stats,
         "mode": mode,
         "seed": seed,
         "repeat": repeat,

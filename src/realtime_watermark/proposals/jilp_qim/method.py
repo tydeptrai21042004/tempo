@@ -1,8 +1,19 @@
 from __future__ import annotations
 
 from typing import Any
+from functools import lru_cache
 
+import os
 import numpy as np
+
+try:
+    from numba import get_num_threads, prange, set_num_threads
+except Exception:  # pragma: no cover
+    prange = range
+    def get_num_threads() -> int:
+        return 1
+    def set_num_threads(_n: int) -> None:
+        return None
 
 from ...common.types import MethodRef, WatermarkKey
 from ...core import NUMBA_AVAILABLE, arnold_inverse, arnold_period, arnold_transform, dct_basis, make_block_indices, njit
@@ -15,6 +26,23 @@ DEFAULT_REFERENCE_STEP = 14.875
 DEFAULT_PILOT_STEP = 17.0
 DEFAULT_PILOT_COUNT = 96
 BLOCK_SIZE = _eng.BLOCK_SIZE
+
+
+def _call_with_realtime_thread_budget(kernel, *args):
+    """Apply a local bounded worker budget and restore the caller setting."""
+    previous = int(get_num_threads())
+    try:
+        requested = int(os.environ.get("JILP_NUM_THREADS", "4"))
+    except ValueError:
+        requested = 4
+    target = max(1, min(previous, requested))
+    if target != previous:
+        set_num_threads(target)
+    try:
+        return kernel(*args)
+    finally:
+        if target != previous:
+            set_num_threads(previous)
 
 # JILP-QIM uses one calibrated
 # low-frequency differential carrier by default. A second carrier remains an
@@ -111,13 +139,13 @@ def _block_scores_kernel(host, ba1, bb1, ba2, bb2, eta, h_crop, w_crop, block_si
 
 METHOD_REF = MethodRef(
     id=METHOD_ID,
-    display_name="Proposal: JILP-QIM with orthogonal low-frequency pilots",
+    display_name="Proposal: RT-JILP-QIM with deterministic block-parallel projection",
     paper="This work.",
     url="",
     implementation_note=(
-        "Blind repair-free proposal using bounded-integer lattice projection, a primary "
-        "low-frequency differential payload carrier, and an exactly orthogonal "
-        "low-frequency pilot carrier. No original host is used at extraction."
+        "Blind repair-free proposal using deterministic block-parallel bounded-integer projection, "
+        "a primary low-frequency differential payload carrier, and an exactly orthogonal pilot "
+        "carrier. The parallel schedule preserves the original per-block arithmetic and output."
     ),
 )
 
@@ -151,10 +179,15 @@ def _build_key_params(
     step1 = float(step) * primary_frac
     step2 = float(step) * float(np.sqrt(max(1.0 - primary_frac * primary_frac, 0.0)))
     return {
-        "method_family": "Repair-free joint integer-lattice projection QIM",
+        "method_family": "Deterministic block-parallel repair-free joint integer-lattice projection QIM",
         "method_id": METHOD_ID,
         "block_size": BLOCK_SIZE,
         "basis_kind": "dct",
+        "realtime_execution": "residual-exact single-pass bounded-integer block-parallel projection and extraction",
+        "parallel_equivalence": "same per-block arithmetic, QIM targets, schedules, and uint8 output",
+        "residual_exact_integer_tracking": True,
+        "schedule_decoupled_raster_execution": True,
+        "key_compiled_execution_plan": True,
         "payload_carrier": "primary low-frequency difference carrier: (0,1)/(1,0)",
         "payload_carrier_1": "(0,1)/(1,0)",
         "payload_carrier_2": "(0,2)/(2,0)",
@@ -341,6 +374,38 @@ def _balanced_pilot_bits(count: int, seed: int) -> np.ndarray:
     return bits.astype(np.uint8)
 
 
+
+@lru_cache(maxsize=256)
+def _compiled_full_capacity_schedule(
+    h_crop: int,
+    w_crop: int,
+    payload_len: int,
+    seed: int,
+    pilot_count: int,
+    block_size: int,
+    pilot_schedule: str,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compile the seed-defined online execution plan once per key geometry."""
+    capacity = (h_crop // block_size) * (w_crop // block_size)
+    payload_indices = make_block_indices(
+        h_crop, w_crop, block_size, payload_len, 1, int(seed)
+    ).astype(np.int32)
+    if str(pilot_schedule).lower() == "stratified":
+        pilot_indices = _make_stratified_pilot_indices(
+            h_crop, w_crop, pilot_count=int(pilot_count), seed=int(seed), block_size=int(block_size)
+        )
+    else:
+        rng_p = np.random.default_rng(int(seed) + 919)
+        count = int(min(max(0, pilot_count), capacity))
+        pilot_indices = rng_p.permutation(capacity)[:count].astype(np.int32)
+    pilot_bits = _balanced_pilot_bits(len(pilot_indices), int(seed))
+    # Treat cached arrays as immutable execution-plan data.
+    payload_indices.setflags(write=False)
+    pilot_indices.setflags(write=False)
+    pilot_bits.setflags(write=False)
+    return payload_indices, pilot_indices, pilot_bits
+
+
 def _make_content_adaptive_schedules(
     host_rgb: np.ndarray,
     watermark_shape: tuple[int, int],
@@ -363,15 +428,10 @@ def _make_content_adaptive_schedules(
     if payload_len > capacity:
         raise ValueError(f"capacity too small: payload={payload_len}, capacity={capacity}")
     if capacity <= payload_len:
-        payload_indices = make_block_indices(h_crop, w_crop, block_size, payload_len, 1, int(seed)).astype(np.int32)
-        if str(pilot_schedule).lower() == "stratified":
-            pilot_indices = _make_stratified_pilot_indices(
-                h_crop, w_crop, pilot_count=int(pilot_count), seed=int(seed), block_size=int(block_size)
-            )
-        else:
-            rng_p = np.random.default_rng(int(seed) + 919)
-            pilot_indices = rng_p.permutation(capacity)[: int(min(max(0, pilot_count), capacity))].astype(np.int32)
-        pilot_bits = _balanced_pilot_bits(len(pilot_indices), int(seed))
+        payload_indices, pilot_indices, pilot_bits = _compiled_full_capacity_schedule(
+            int(h_crop), int(w_crop), int(payload_len), int(seed), int(pilot_count),
+            int(block_size), str(pilot_schedule).lower()
+        )
         return payload_indices, pilot_indices, pilot_bits, capacity, h_crop, w_crop, payload_len
 
     rng = np.random.default_rng(int(seed))
@@ -461,7 +521,11 @@ def _schedules_from_key(params: dict[str, Any]) -> tuple[np.ndarray, np.ndarray,
         pool_size = int(min(capacity, max(payload_len, int(budget))))
 
     if capacity <= payload_len:
-        payload_indices = make_block_indices(h_crop, w_crop, bs, payload_len, 1, seed).astype(np.int32)
+        payload_indices, pilot_indices_cached, pilot_bits_cached = _compiled_full_capacity_schedule(
+            int(h_crop), int(w_crop), int(payload_len), int(seed), int(pilot_count),
+            int(bs), str(params.get("pilot_schedule", "random")).lower()
+        )
+        return payload_indices, pilot_indices_cached, pilot_bits_cached, capacity, h_crop, w_crop
     elif mode == "random":
         rng = np.random.default_rng(seed)
         # Mirror _make_content_adaptive_schedules exactly. NumPy's
@@ -508,7 +572,8 @@ def _extract_payload_bits_raw(img: np.ndarray, key_params: dict[str, Any], off_y
     idx = payload_indices[valid].astype(np.int32)
     ref_step = float(key_params.get("step", DEFAULT_REFERENCE_STEP))
     step1 = float(key_params.get("step_carrier1", ref_step))
-    bits = _eng._extract_one_carrier_bits(
+    bits = _call_with_realtime_thread_budget(
+        _eng._extract_one_carrier_bits_parallel,
         img, idx, PAY10_BA, PAY10_BB,
         step1, int(w_crop), bs, float(key_params.get("eta", 0.07)), int(off_y), int(off_x)
     )
@@ -563,14 +628,14 @@ def _extract_dual_carrier_bits_conf_kernel(img, indices, ba1, bb1, ba2, bb2, ste
     return out_bits, out_conf
 
 
-@njit(cache=True, fastmath=True)
+@njit(cache=True, fastmath=True, parallel=True)
 def _extract_one_carrier_bits_conf_kernel(img, indices, ba, bb, step, w_crop, block_size, eta, off_y, off_x):
     n = indices.shape[0]
     bs = block_size
     bc = (w_crop - off_x) // bs
     out_bits = np.empty(n, dtype=np.uint8)
     out_conf = np.empty(n, dtype=np.float32)
-    for k in range(n):
+    for k in prange(n):
         idx = int(indices[k])
         r0 = off_y + (idx // bc) * bs
         c0 = off_x + (idx % bc) * bs
@@ -611,7 +676,8 @@ def _extract_payload_bits_confidence(img: np.ndarray, key_params: dict[str, Any]
     idx = payload_indices[valid].astype(np.int32)
     ref_step = float(key_params.get("step", DEFAULT_REFERENCE_STEP))
     step1 = float(key_params.get("step_carrier1", ref_step))
-    bits, conf = _extract_one_carrier_bits_conf_kernel(
+    bits, conf = _call_with_realtime_thread_budget(
+        _extract_one_carrier_bits_conf_kernel,
         img, idx, PAY10_BA, PAY10_BB,
         step1, int(w_crop), bs, float(key_params.get("eta", 0.07)), int(off_y), int(off_x)
     )
@@ -654,7 +720,8 @@ def _payload_from_shift(img: np.ndarray, key_params: dict[str, Any], sy: int, sx
     idx = payload_indices[valid].astype(np.int32)
     ref_step = float(key_params.get("step", DEFAULT_REFERENCE_STEP))
     step1 = float(key_params.get("step_carrier1", ref_step))
-    bits = _eng._extract_one_carrier_bits_shift(
+    bits = _call_with_realtime_thread_budget(
+        _eng._extract_one_carrier_bits_shift,
         img, idx, PAY10_BA, PAY10_BB,
         step1, int(w_crop), bs, float(key_params.get("eta", 0.07)), int(off_y), int(off_x), int(sy), int(sx)
     )
@@ -854,6 +921,12 @@ def embed_jilp_qim(
     out = host.copy()
     step1 = float(params["step_carrier1"])
     effective_eta = float(params["eta"])
+    # Physical traversal is separated from the keyed logical bit schedule.
+    # Processing blocks in raster order improves cache locality without changing
+    # which bit is assigned to any block.
+    execution_order = np.argsort(payload_indices, kind="stable")
+    payload_indices_exec = payload_indices[execution_order]
+    bits_exec = bits[execution_order]
 
     # Pilots use the exactly orthogonal low-frequency sum carrier.
     if bool(enable_pilots) and len(pilot_indices):
@@ -869,8 +942,9 @@ def embed_jilp_qim(
             if str(projection_mode) == "minimum_distortion"
             else _eng._embed_one_carrier_jilp_center
         )
-        integer_updates, unresolved = kernel(
-            out, payload_indices, bits, PAY10_BA, PAY10_BB, step1,
+        integer_updates, unresolved = _call_with_realtime_thread_budget(
+            kernel,
+            out, payload_indices_exec, bits_exec, PAY10_BA, PAY10_BB, step1,
             step1 * float(rho_frac), int(w_crop), BLOCK_SIZE, effective_eta
         )
     else:
@@ -880,7 +954,7 @@ def embed_jilp_qim(
             else _eng._embed_one_carrier_center
         )
         kernel(
-            host, out, payload_indices, bits, PAY10_BA, PAY10_BB, step1,
+            host, out, payload_indices_exec, bits_exec, PAY10_BA, PAY10_BB, step1,
             step1 * float(rho_frac), int(w_crop), BLOCK_SIZE, effective_eta
         )
         integer_updates, unresolved = 0, 0

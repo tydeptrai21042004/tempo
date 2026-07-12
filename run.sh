@@ -60,6 +60,9 @@ case "$COMMAND" in
   video)
     exec "$PYTHON" scripts/run_watermark_commands.py video-realtime "$@"
     ;;
+  stream)
+    exec "$PYTHON" scripts/live_stream_benchmark.py "$@"
+    ;;
   structural)
     exec "$PYTHON" scripts/proposal_structural_ablation.py "$@"
     ;;
@@ -97,6 +100,7 @@ Commands:
   image            Run optional common-protocol held-out image benchmarking
   image-one        Run one matched-distortion image benchmark
   video            Run the common framewise video benchmark
+  stream           Run the bounded-queue causal live-stream benchmark
   structural       Run image structural ablation
   video-ablation   Compare hard and confidence-weighted temporal voting on video
   kaggle-setup     Check/install only missing Kaggle dependencies

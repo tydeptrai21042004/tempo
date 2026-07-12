@@ -110,6 +110,27 @@ PAPER_FIDELITY: dict[str, dict] = {
         "unresolved_core_stages": [],
         "eligibility_reason": "Paper-supported informed baseline; detector access to original selected coefficients is preserved and disclosed.",
     },
+    "dew_langelaar2001": {
+        "native_status": "paper_supported_keyed_region_differential_energy_watermarking",
+        "common_adapter_status": "paper_core_decoded_frame_DCT_adapter",
+        "paper_reproduction_eligible": False,
+        "native_formula_reproduction_eligible": False,
+        "common_primary_eligible": True,
+        "blindness_tier": "blind",
+        "verified_capacity": "one bit per keyed even-sized DCT-block region; at least two blocks per bit",
+        "verified": [
+            "keyed permutation of 8x8 luminance-DCT blocks",
+            "two energy subregions per label bit",
+            "D=E_A-E_B sign detector",
+            "paper coefficient-zeroing mode",
+        ],
+        "adapted": [
+            "decoded RGB frames rather than direct JPEG/MPEG coefficient parsing",
+            "minimum-energy-removal mode for PSNR-controlled common streaming",
+        ],
+        "unresolved_core_stages": [],
+        "eligibility_reason": "Paper-supported blind real-time DCT-energy baseline; compressed-domain parsing is not claimed.",
+    },
     "proposal": {
         "native_status": "repository_proposal",
         "common_adapter_status": "repository_proposal",
