@@ -70,6 +70,10 @@ def test_repair_free_embedding_reports_zero_unresolved(host128, wm16):
     assert key.params["clean_verification_iters"] == 0
     assert key.params["clean_repaired_bits"] == 0
     assert key.params["integer_lattice_unresolved"] == 0
+    assert key.params["integer_lattice_payload_blocks"] == wm16.size
+    assert key.params["integer_lattice_corrected_blocks"] >= 0
+    assert key.params["integer_lattice_initial_parity_failures"] >= 0
+    assert key.params["integer_lattice_initial_guard_failures"] >= 0
 
 
 def test_compact_random_schedule_roundtrip_with_spare_host_capacity():

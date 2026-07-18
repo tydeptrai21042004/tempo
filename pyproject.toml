@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "real-time-watermark-benchmark"
-version = "1.4.0"
+version = "1.5.0"
 description = "Paper-native and common-protocol watermark benchmark with reproducible QIM, STDM, ISS, CA-QIM, Cox spread spectrum, and JILP-QIM"
 requires-python = ">=3.11"
 dependencies = [

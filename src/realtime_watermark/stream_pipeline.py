@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 from queue import Empty, Full, Queue
 from threading import Event, Lock, Thread
 from typing import Any, Iterable
 import json
-import math
 import time
 
 import numpy as np
-from PIL import Image
-
-from .common.timing import summarize_ms
 from .core import (
     attack_blur,
     attack_brightness_contrast,
@@ -29,8 +26,9 @@ from .core import (
 )
 from .fair_benchmark import calibrate_step_to_psnr
 from .registry import STREAM_BENCHMARK_METHODS, embed, extract, normalize_method_id
+from .proposals.jilp_qim.method import extract_jilp_qim
 
-STREAM_PROTOCOL_VERSION = "1.0"
+STREAM_PROTOCOL_VERSION = "1.1"
 STREAM_METHODS = tuple(STREAM_BENCHMARK_METHODS)
 VOTE_WINDOWS = (1, 3, 5, 10, 15, 30)
 
@@ -172,7 +170,17 @@ def _process_packet(
             "psnr": psnr(packet.frame_rgb, marked),
             "channel_dropped": True,
         }
-    recovered = extract(attacked, key)
+    if normalize_method_id(method_id) == "proposal":
+        recovered, extraction_meta = extract_jilp_qim(
+            attacked, key, sync=True, return_meta=True
+        )
+    else:
+        recovered = extract(attacked, key)
+        extraction_meta = {
+            "path": "method_default", "candidate": "",
+            "score": float("nan"), "pilot_valid": 0,
+            "shift_y": 0, "shift_x": 0,
+        }
     t3 = time.perf_counter()
     return {
         "frame_id": packet.frame_id,
@@ -186,6 +194,18 @@ def _process_packet(
         "service_ms": (t3 - t0) * 1000.0,
         "psnr": psnr(packet.frame_rgb, marked),
         "channel_dropped": False,
+        "extraction_path": extraction_meta.get("path", ""),
+        "sync_candidate": extraction_meta.get("candidate", ""),
+        "pilot_score": extraction_meta.get("score", float("nan")),
+        "pilot_valid": extraction_meta.get("pilot_valid", 0),
+        "estimated_shift_y": extraction_meta.get("shift_y", 0),
+        "estimated_shift_x": extraction_meta.get("shift_x", 0),
+        "integer_lattice_unit_updates": int(key.params.get("integer_lattice_unit_updates", 0)),
+        "integer_lattice_unresolved": int(key.params.get("integer_lattice_unresolved", 0)),
+        "integer_lattice_corrected_blocks": int(key.params.get("integer_lattice_corrected_blocks", 0)),
+        "integer_lattice_initial_parity_failures": int(key.params.get("integer_lattice_initial_parity_failures", 0)),
+        "integer_lattice_initial_guard_failures": int(key.params.get("integer_lattice_initial_guard_failures", 0)),
+        "integer_lattice_payload_blocks": int(key.params.get("integer_lattice_payload_blocks", watermark.size)),
     }
 
 
@@ -201,37 +221,62 @@ def _run_virtual(
     step: float | None,
     method_params: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], int, float]:
+    """Deterministic event replay with the same drop-oldest policy as realtime mode."""
     period_s = 1.0 / float(target_fps)
-    available_s = 0.0
+    capacity = max(1, int(queue_size))
+    waiting: deque[StreamPacket] = deque()
     traces: list[dict[str, Any]] = []
     queue_drops = 0
-    for frame_id, frame in enumerate(frames):
-        arrival_s = frame_id * period_s
-        waiting_frames = max(0, int(math.floor(max(0.0, available_s - arrival_s) / period_s)))
-        if waiting_frames >= int(queue_size):
-            queue_drops += 1
+    next_frame = 0
+    now_s = 0.0
+
+    def enqueue(packet: StreamPacket) -> None:
+        nonlocal queue_drops
+        if len(waiting) >= capacity:
+            dropped = waiting.popleft()
             traces.append({
-                "frame_id": frame_id, "arrival_s": arrival_s,
-                "queue_dropped": True, "channel_dropped": False,
-                "deadline_missed": True, "queue_wait_ms": float("nan"),
+                "frame_id": dropped.frame_id,
+                "arrival_s": dropped.arrival_s,
+                "queue_dropped": True,
+                "channel_dropped": False,
+                "deadline_missed": True,
+                "queue_wait_ms": float("nan"),
             })
-            continue
-        start_s = max(arrival_s, available_s)
+            queue_drops += 1
+        waiting.append(packet)
+
+    while next_frame < len(frames) or waiting:
+        if not waiting:
+            arrival_s = next_frame * period_s
+            now_s = max(now_s, arrival_s)
+            enqueue(StreamPacket(next_frame, arrival_s, frames[next_frame]))
+            next_frame += 1
+
+        packet = waiting.popleft()
+        start_s = max(now_s, packet.arrival_s)
         result = _process_packet(
-            StreamPacket(frame_id, arrival_s, frame), method_id=method_id,
-            watermark=watermark, channel=channel, seed=seed, step=step,
-            method_params=method_params,
+            packet, method_id=method_id, watermark=watermark, channel=channel,
+            seed=seed, step=step, method_params=method_params,
         )
         end_s = start_s + result["service_ms"] / 1000.0
-        available_s = end_s
+
+        # Reproduce every periodic arrival that occurred while this frame was in service.
+        while next_frame < len(frames) and next_frame * period_s <= end_s:
+            arrival_s = next_frame * period_s
+            enqueue(StreamPacket(next_frame, arrival_s, frames[next_frame]))
+            next_frame += 1
+
         traces.append({
             **result,
             "queue_dropped": False,
-            "queue_wait_ms": (start_s - arrival_s) * 1000.0,
-            "end_to_end_latency_ms": (end_s - arrival_s) * 1000.0,
-            "deadline_missed": bool(end_s > arrival_s + period_s),
+            "queue_wait_ms": (start_s - packet.arrival_s) * 1000.0,
+            "end_to_end_latency_ms": (end_s - packet.arrival_s) * 1000.0,
+            "deadline_missed": bool(end_s > packet.arrival_s + period_s),
         })
-    total_duration_s = max(available_s, len(frames) * period_s)
+        now_s = end_s
+
+    traces.sort(key=lambda row: int(row["frame_id"]))
+    total_duration_s = max(now_s, len(frames) * period_s)
     return traces, queue_drops, total_duration_s
 
 
@@ -340,6 +385,9 @@ def summarize_stream_run(
     latency_ms = [float(r["end_to_end_latency_ms"]) for r in processed]
     psnrs = [float(r["psnr"]) for r in processed]
     deadlines = [bool(r.get("deadline_missed")) for r in traces if not r.get("queue_dropped")]
+    on_time_processed = [r for r in processed if not bool(r.get("deadline_missed", True))]
+    recovery_rows = [r for r in processed if r.get("extraction_path") == "wide_sync_jilp"]
+    fast_rows = [r for r in processed if r.get("extraction_path") == "raw_fast_jilp"]
     running_ncs: list[float] = []
     for i in range(1, len(recovered_frames) + 1):
         running_ncs.append(nc_binary(watermark, _running_vote(recovered_frames[:i])))
@@ -361,6 +409,17 @@ def summarize_stream_run(
     pixels = int(resolution[0]) * int(resolution[1])
     service_median = _percentile(service_ms, 50)
     service_p95 = _percentile(service_ms, 95)
+    latency_p95 = _percentile(latency_ms, 95)
+    frame_deadline_ms = 1000.0 / float(target_fps)
+    on_time_ratio = len(on_time_processed) / max(frame_count, 1)
+    sustained_end_to_end = bool(
+        processed_count == frame_count
+        and int(queue_drops) == 0
+        and int(channel_drops) == 0
+        and effective_fps >= float(target_fps)
+        and latency_p95 <= frame_deadline_ms
+        and len(on_time_processed) == frame_count
+    )
     summary = {
         "protocol_version": STREAM_PROTOCOL_VERSION,
         "method_id": method_id,
@@ -376,6 +435,8 @@ def summarize_stream_run(
         "frames_dropped_channel": int(channel_drops),
         "processed_frame_ratio": float(processed_count / max(frame_count, 1)),
         "deadline_miss_rate": float(np.mean(deadlines)) if deadlines else float("nan"),
+        "frames_completed_on_time": int(len(on_time_processed)),
+        "on_time_completion_ratio": float(on_time_ratio),
         "effective_output_fps": float(effective_fps),
         "real_time_factor": float(effective_fps / float(target_fps)),
         "payload_throughput_bps": float(effective_fps * watermark.size),
@@ -392,9 +453,11 @@ def summarize_stream_run(
         "service_ms_p95": service_p95,
         "sustainable_fps_median": 1000.0 / max(service_median, 1e-9),
         "sustainable_fps_p95": 1000.0 / max(service_p95, 1e-9),
-        "p95_meets_frame_deadline": bool(service_p95 <= 1000.0 / float(target_fps)) if service_ms else False,
+        "p95_meets_frame_deadline": bool(service_p95 <= frame_deadline_ms) if service_ms else False,
         "latency_ms_median": _percentile(latency_ms, 50),
-        "latency_ms_p95": _percentile(latency_ms, 95),
+        "latency_ms_p95": latency_p95,
+        "latency_p95_meets_frame_deadline": bool(latency_p95 <= frame_deadline_ms) if latency_ms else False,
+        "sustained_realtime_end_to_end": sustained_end_to_end,
         "latency_ms_p99": _percentile(latency_ms, 99),
         "single_frame_nc_mean": float(np.mean(single_nc)) if single_nc else float("nan"),
         "single_frame_nc_min": float(np.min(single_nc)) if single_nc else float("nan"),
@@ -403,6 +466,16 @@ def summarize_stream_run(
         "single_frame_success_nc_050": float(np.mean(np.asarray(single_nc) >= 0.50)) if single_nc else float("nan"),
         "single_frame_success_nc_070": float(np.mean(np.asarray(single_nc) >= 0.70)) if single_nc else float("nan"),
         "single_frame_success_nc_090": float(np.mean(np.asarray(single_nc) >= 0.90)) if single_nc else float("nan"),
+        "recovery_invocation_rate": float(len(recovery_rows) / max(processed_count, 1)),
+        "fast_path_extract_ms_median": _percentile([float(r["extract_ms"]) for r in fast_rows], 50),
+        "recovery_path_extract_ms_median": _percentile([float(r["extract_ms"]) for r in recovery_rows], 50),
+        "recovery_path_extract_ms_p95": _percentile([float(r["extract_ms"]) for r in recovery_rows], 95),
+        "integer_lattice_unit_updates_mean": float(np.mean([float(r.get("integer_lattice_unit_updates", 0)) for r in processed])) if processed else float("nan"),
+        "integer_lattice_unresolved_total": int(sum(int(r.get("integer_lattice_unresolved", 0)) for r in processed)),
+        "integer_lattice_corrected_blocks_mean": float(np.mean([float(r.get("integer_lattice_corrected_blocks", 0)) for r in processed])) if processed else float("nan"),
+        "integer_lattice_initial_parity_failures_mean": float(np.mean([float(r.get("integer_lattice_initial_parity_failures", 0)) for r in processed])) if processed else float("nan"),
+        "integer_lattice_initial_guard_failures_mean": float(np.mean([float(r.get("integer_lattice_initial_guard_failures", 0)) for r in processed])) if processed else float("nan"),
+        "integer_lattice_payload_blocks_mean": float(np.mean([float(r.get("integer_lattice_payload_blocks", 0)) for r in processed])) if processed else float("nan"),
         "time_to_nc_090_ms": first_threshold(0.90),
         "time_to_nc_095_ms": first_threshold(0.95),
         **windows,
@@ -497,7 +570,7 @@ def run_stream_benchmark(
         "kind": "deadline_constrained_causal_online_stream",
         "future_frames_available": False,
         "bounded_queue": int(queue_size),
-        "drop_policy": "drop oldest in realtime mode; equivalent bounded-backlog replay in virtual mode",
+        "drop_policy": "drop oldest in both realtime and deterministic virtual-replay modes",
         "target_fps": float(target_fps),
         "target_psnr": float(target_psnr),
         "channels": list(channels),

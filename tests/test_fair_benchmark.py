@@ -48,3 +48,6 @@ def test_small_fair_run_writes_consistent_config_hashes(tmp_path):
     assert protocol["method_params_by_method"]["proposal"] == DEFAULT_CONFIG.to_dict()
     assert "process_cumulative_peak_rss_mb" in summary
     assert "peak_process_rss_mb" not in summary
+    assert "integer_lattice_unit_updates" in summary
+    assert "recovery_invocation_rate" in summary
+    assert all("extraction_path" in row for row in result["attacks"])

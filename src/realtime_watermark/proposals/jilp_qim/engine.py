@@ -215,6 +215,8 @@ def _embed_one_carrier_jilp(out, indices, bits, ba, bb, step, rho, w_crop, block
     p2 = g2 / gg
     corrections_per_block = np.zeros(n, dtype=np.int64)
     unresolved_per_block = np.zeros(n, dtype=np.int64)
+    initial_parity_failures = np.zeros(n, dtype=np.int64)
+    initial_guard_failures = np.zeros(n, dtype=np.int64)
 
     for k in prange(n):
         block_corrections = 0
@@ -272,6 +274,13 @@ def _embed_one_carrier_jilp(out, indices, bits, ba, bb, step, rho, w_crop, block
         else:
             va = v
         guard = 0.08 * step
+        initial_q = int(np.rint(va / step))
+        initial_center = initial_q * step
+        initial_margin = 0.5 * step - abs(va - initial_center)
+        if (initial_q & 1) != int(bits[k]):
+            initial_parity_failures[k] = 1
+        if initial_margin < guard:
+            initial_guard_failures[k] = 1
         solved = False
         for _it in range(64):
             qcur = int(np.rint(va / step))
@@ -319,7 +328,13 @@ def _embed_one_carrier_jilp(out, indices, bits, ba, bb, step, rho, w_crop, block
             if (qcur & 1) != int(bits[k]):
                 unresolved_per_block[k] = 1
         corrections_per_block[k] = block_corrections
-    return int(np.sum(corrections_per_block)), int(np.sum(unresolved_per_block))
+    return (
+        int(np.sum(corrections_per_block)),
+        int(np.sum(unresolved_per_block)),
+        int(np.sum(corrections_per_block > 0)),
+        int(np.sum(initial_parity_failures)),
+        int(np.sum(initial_guard_failures)),
+    )
 
 @njit(cache=True, fastmath=True, parallel=True)
 def _embed_one_carrier_jilp_center(out, indices, bits, ba, bb, step, rho, w_crop, block_size, eta):
@@ -341,6 +356,8 @@ def _embed_one_carrier_jilp_center(out, indices, bits, ba, bb, step, rho, w_crop
     p2 = g2 / gg
     corrections_per_block = np.zeros(n, dtype=np.int64)
     unresolved_per_block = np.zeros(n, dtype=np.int64)
+    initial_parity_failures = np.zeros(n, dtype=np.int64)
+    initial_guard_failures = np.zeros(n, dtype=np.int64)
 
     for k in prange(n):
         block_corrections = 0
@@ -398,6 +415,13 @@ def _embed_one_carrier_jilp_center(out, indices, bits, ba, bb, step, rho, w_crop
         else:
             va = v
         guard = 0.08 * step
+        initial_q = int(np.rint(va / step))
+        initial_center = initial_q * step
+        initial_margin = 0.5 * step - abs(va - initial_center)
+        if (initial_q & 1) != int(bits[k]):
+            initial_parity_failures[k] = 1
+        if initial_margin < guard:
+            initial_guard_failures[k] = 1
         solved = False
         for _it in range(64):
             qcur = int(np.rint(va / step))
@@ -445,7 +469,13 @@ def _embed_one_carrier_jilp_center(out, indices, bits, ba, bb, step, rho, w_crop
             if (qcur & 1) != int(bits[k]):
                 unresolved_per_block[k] = 1
         corrections_per_block[k] = block_corrections
-    return int(np.sum(corrections_per_block)), int(np.sum(unresolved_per_block))
+    return (
+        int(np.sum(corrections_per_block)),
+        int(np.sum(unresolved_per_block)),
+        int(np.sum(corrections_per_block > 0)),
+        int(np.sum(initial_parity_failures)),
+        int(np.sum(initial_guard_failures)),
+    )
 
 @njit(cache=True, fastmath=True)
 def _extract_one_carrier_bits(img, indices, ba, bb, step, w_crop, block_size, eta, off_y, off_x):

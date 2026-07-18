@@ -368,6 +368,16 @@ def run_fair_compare(
         ):
             timing_rows.append({"method_id": method_id, "stage": stage, **dist.to_dict()})
 
+        if method_id == "proposal":
+            recovered, clean_meta = extract_jilp_qim(
+                watermarked, key, sync=True, return_meta=True
+            )
+        else:
+            clean_meta = {
+                "path": "method_default", "candidate": "",
+                "score": float("nan"), "pilot_valid": 0,
+                "shift_y": 0, "shift_x": 0,
+            }
         measured_psnr = psnr(host, watermarked)
         clean_acc = bit_accuracy(wm, recovered)
         eligible, eligibility_reason = _eligibility(method_id, clean_acc, measured_psnr, float(target_psnr), float(psnr_tolerance))
@@ -380,7 +390,17 @@ def run_fair_compare(
         for attack_name, attack_fn in default_attacks(attack_preset):
             attacked = watermarked if attack_name == "clean" else attack_fn(watermarked)
             a0 = time.perf_counter_ns()
-            rec = extract(attacked, key)
+            if method_id == "proposal":
+                rec, extraction_meta = extract_jilp_qim(
+                    attacked, key, sync=True, return_meta=True
+                )
+            else:
+                rec = extract(attacked, key)
+                extraction_meta = {
+                    "path": "method_default", "candidate": "",
+                    "score": float("nan"), "pilot_valid": 0,
+                    "shift_y": 0, "shift_x": 0,
+                }
             a1 = time.perf_counter_ns()
             row = {
                 "method_id": method_id,
@@ -400,6 +420,12 @@ def run_fair_compare(
                 "ber": ber(wm, rec),
                 "extract_ms": (a1 - a0) / 1_000_000.0,
                 "extract_fps": 1_000_000_000.0 / max(a1 - a0, 1),
+                "extraction_path": extraction_meta.get("path", ""),
+                "sync_candidate": extraction_meta.get("candidate", ""),
+                "pilot_score": extraction_meta.get("score", float("nan")),
+                "pilot_valid": extraction_meta.get("pilot_valid", 0),
+                "estimated_shift_y": extraction_meta.get("shift_y", 0),
+                "estimated_shift_x": extraction_meta.get("shift_x", 0),
             }
             attack_rows.append(row)
             method_attack_rows.append(row)
@@ -407,6 +433,8 @@ def run_fair_compare(
         non_clean = [r for r in method_attack_rows if r["phase"] != "clean"]
         attack_ncs = np.asarray([r["nc_bipolar"] for r in non_clean], dtype=np.float64)
         attack_bers = np.asarray([r["ber"] for r in non_clean], dtype=np.float64)
+        recovery_rows = [r for r in non_clean if r.get("extraction_path") == "wide_sync_jilp"]
+        fast_rows = [r for r in non_clean if r.get("extraction_path") == "raw_fast_jilp"]
         worst_row = min(non_clean, key=lambda r: r["nc_bipolar"]) if non_clean else {"phase": ""}
         fidelity = fidelity_status(method_id)
         summary_rows.append({
@@ -470,6 +498,19 @@ def run_fair_compare(
             "process_cumulative_peak_rss_mb": _peak_rss_mb(),
             "fully_blind": bool(key.fully_blind),
             "side_information": key.side_information,
+            "clean_extraction_path": clean_meta.get("path", ""),
+            "integer_lattice_unit_updates": int(key.params.get("integer_lattice_unit_updates", 0)),
+            "integer_lattice_unresolved": int(key.params.get("integer_lattice_unresolved", 0)),
+            "integer_lattice_corrected_blocks": int(key.params.get("integer_lattice_corrected_blocks", 0)),
+            "integer_lattice_initial_parity_failures": int(key.params.get("integer_lattice_initial_parity_failures", 0)),
+            "integer_lattice_initial_guard_failures": int(key.params.get("integer_lattice_initial_guard_failures", 0)),
+            "integer_lattice_payload_blocks": int(key.params.get("integer_lattice_payload_blocks", payload_bits)),
+            "recovery_invocation_rate": float(len(recovery_rows) / max(len(non_clean), 1)),
+            "fast_path_attack_extract_ms_median": float(np.median([r["extract_ms"] for r in fast_rows])) if fast_rows else float("nan"),
+            "fast_path_attack_extract_ms_p95": float(np.percentile([r["extract_ms"] for r in fast_rows], 95)) if fast_rows else float("nan"),
+            "recovery_path_attack_extract_ms_median": float(np.median([r["extract_ms"] for r in recovery_rows])) if recovery_rows else float("nan"),
+            "recovery_path_attack_extract_ms_p95": float(np.percentile([r["extract_ms"] for r in recovery_rows], 95)) if recovery_rows else float("nan"),
+            "expected_attack_extract_ms_mean": float(np.mean([r["extract_ms"] for r in non_clean])) if non_clean else float("nan"),
             "min_attack_nc_bipolar": float(np.min(attack_ncs)) if non_clean else float("nan"),
             "p10_attack_nc_bipolar": float(np.percentile(attack_ncs, 10)) if non_clean else float("nan"),
             "p25_attack_nc_bipolar": float(np.percentile(attack_ncs, 25)) if non_clean else float("nan"),

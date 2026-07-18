@@ -942,7 +942,10 @@ def embed_jilp_qim(
             if str(projection_mode) == "minimum_distortion"
             else _eng._embed_one_carrier_jilp_center
         )
-        integer_updates, unresolved = _call_with_realtime_thread_budget(
+        (
+            integer_updates, unresolved, corrected_blocks,
+            initial_parity_failures, initial_guard_failures,
+        ) = _call_with_realtime_thread_budget(
             kernel,
             out, payload_indices_exec, bits_exec, PAY10_BA, PAY10_BB, step1,
             step1 * float(rho_frac), int(w_crop), BLOCK_SIZE, effective_eta
@@ -958,6 +961,7 @@ def embed_jilp_qim(
             step1 * float(rho_frac), int(w_crop), BLOCK_SIZE, effective_eta
         )
         integer_updates, unresolved = 0, 0
+        corrected_blocks, initial_parity_failures, initial_guard_failures = 0, 0, 0
     if bool(params.get("dual_payload_carrier", False)):
         raise ValueError("The repair-free JILP method uses one payload carrier; dual carrier is ablation-only and disabled.")
     # No finished-image extraction or post-hoc repair is performed.
@@ -965,6 +969,10 @@ def embed_jilp_qim(
     params["clean_repaired_bits"] = 0
     params["integer_lattice_unit_updates"] = int(integer_updates)
     params["integer_lattice_unresolved"] = int(unresolved)
+    params["integer_lattice_corrected_blocks"] = int(corrected_blocks)
+    params["integer_lattice_initial_parity_failures"] = int(initial_parity_failures)
+    params["integer_lattice_initial_guard_failures"] = int(initial_guard_failures)
+    params["integer_lattice_payload_blocks"] = int(len(payload_indices_exec))
     if bool(use_integer_lattice_closure) and int(unresolved) != 0:
         raise RuntimeError(
             f"JILP embedding is infeasible for {int(unresolved)} payload block(s); "

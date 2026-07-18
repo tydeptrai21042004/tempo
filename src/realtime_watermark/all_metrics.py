@@ -18,8 +18,9 @@ from .native_metrics import (
 )
 from .paper_native import NATIVE_DISCLOSURES
 from .registry import COMMON_IMAGE_METHODS, embed, extract, normalize_method_id
+from .proposals.jilp_qim.method import extract_jilp_qim
 
-ALL_METRICS_PROTOCOL_VERSION = "1.0"
+ALL_METRICS_PROTOCOL_VERSION = "1.1"
 
 
 def _json_key_bytes(key: Any) -> int:
@@ -119,14 +120,30 @@ def run_all_methods_all_metrics(
             embed_ms = (time.perf_counter() - t0) * 1000.0
             embedding_metrics = _image_metrics(host, marked, "embedding")
             clean_extract_start = time.perf_counter()
-            clean_recovered = extract(marked, key)
+            if method_id == "proposal":
+                clean_recovered, clean_meta = extract_jilp_qim(
+                    marked, key, sync=True, return_meta=True
+                )
+            else:
+                clean_recovered = extract(marked, key)
+                clean_meta = {"path": "method_default", "candidate": "", "score": float("nan"), "pilot_valid": 0}
             clean_extract_ms = (time.perf_counter() - clean_extract_start) * 1000.0
             clean_accuracy = bit_accuracy(wm, clean_recovered)
 
             for attack_name, attack_fn in default_attacks(attack_preset):
                 attacked = np.asarray(attack_fn(marked), dtype=np.uint8)
                 t1 = time.perf_counter()
-                recovered = extract(attacked, key)
+                if method_id == "proposal":
+                    recovered, extraction_meta = extract_jilp_qim(
+                        attacked, key, sync=True, return_meta=True
+                    )
+                else:
+                    recovered = extract(attacked, key)
+                    extraction_meta = {
+                        "path": "method_default", "candidate": "",
+                        "score": float("nan"), "pilot_valid": 0,
+                        "shift_y": 0, "shift_x": 0,
+                    }
                 extract_ms = (time.perf_counter() - t1) * 1000.0
                 native_name, native_value = _native_score(method_id, attacked, key, wm, recovered)
                 detector = _detector_type(method_id)
@@ -174,6 +191,19 @@ def run_all_methods_all_metrics(
                     "common_ecc": False,
                     "side_information": key.side_information,
                     "configuration_sha256": str(key.params.get("config_hash_sha256", "")),
+                    "clean_extraction_path": clean_meta.get("path", ""),
+                    "integer_lattice_unit_updates": int(key.params.get("integer_lattice_unit_updates", 0)),
+                    "integer_lattice_unresolved": int(key.params.get("integer_lattice_unresolved", 0)),
+                    "integer_lattice_corrected_blocks": int(key.params.get("integer_lattice_corrected_blocks", 0)),
+                    "integer_lattice_initial_parity_failures": int(key.params.get("integer_lattice_initial_parity_failures", 0)),
+                    "integer_lattice_initial_guard_failures": int(key.params.get("integer_lattice_initial_guard_failures", 0)),
+                    "integer_lattice_payload_blocks": int(key.params.get("integer_lattice_payload_blocks", wm.size)),
+                    "extraction_path": extraction_meta.get("path", ""),
+                    "sync_candidate": extraction_meta.get("candidate", ""),
+                    "pilot_score": extraction_meta.get("score", float("nan")),
+                    "pilot_valid": extraction_meta.get("pilot_valid", 0),
+                    "estimated_shift_y": extraction_meta.get("shift_y", 0),
+                    "estimated_shift_x": extraction_meta.get("shift_x", 0),
                 }
                 row.update(embedding_metrics)
                 row.update(_image_metrics(host, attacked, "attacked_vs_host"))
@@ -190,6 +220,8 @@ def run_all_methods_all_metrics(
         ncs = np.asarray([float(r["nc_bipolar"]) for r in non_clean], dtype=np.float64)
         bers = np.asarray([float(r["ber"]) for r in non_clean], dtype=np.float64)
         worst = min(non_clean, key=lambda r: float(r["nc_bipolar"])) if non_clean else {"attack": ""}
+        recovery_rows = [r for r in non_clean if r.get("extraction_path") == "wide_sync_jilp"]
+        fast_rows = [r for r in non_clean if r.get("extraction_path") == "raw_fast_jilp"]
         first = group[0]
         summary_rows.append({
             "method_id": method_id,
@@ -213,6 +245,16 @@ def run_all_methods_all_metrics(
             "max_attack_ber": float(np.max(bers)) if non_clean else float("nan"),
             "p90_attack_ber": float(np.percentile(bers, 90)) if non_clean else float("nan"),
             "worst_attack": worst["attack"],
+            "integer_lattice_unit_updates": first.get("integer_lattice_unit_updates", 0),
+            "integer_lattice_unresolved": first.get("integer_lattice_unresolved", 0),
+            "integer_lattice_corrected_blocks": first.get("integer_lattice_corrected_blocks", 0),
+            "integer_lattice_initial_parity_failures": first.get("integer_lattice_initial_parity_failures", 0),
+            "integer_lattice_initial_guard_failures": first.get("integer_lattice_initial_guard_failures", 0),
+            "integer_lattice_payload_blocks": first.get("integer_lattice_payload_blocks", first["payload_bits"]),
+            "recovery_invocation_rate": float(len(recovery_rows) / max(len(non_clean), 1)),
+            "fast_path_extract_ms_median": float(np.median([r["extract_ms"] for r in fast_rows])) if fast_rows else float("nan"),
+            "recovery_path_extract_ms_median": float(np.median([r["extract_ms"] for r in recovery_rows])) if recovery_rows else float("nan"),
+            "recovery_path_extract_ms_p95": float(np.percentile([r["extract_ms"] for r in recovery_rows], 95)) if recovery_rows else float("nan"),
         })
     save_csv(out / "all_methods_all_metrics.csv", rows)
     save_csv(out / "all_methods_summary.csv", summary_rows)

@@ -17,6 +17,7 @@ from .core import (
     load_binary_watermark,
     nc_binary,
     psnr,
+    save_csv,
     save_image,
     save_json,
 )
@@ -70,6 +71,19 @@ class VideoWatermarkStats:
     complete_watermarks_per_second: float | None = None
     processed_frame_ratio: float = 1.0
     side_information_bytes_per_frame: float | None = None
+    serialized_key_bytes: int | None = None
+    side_information_metric_label: str | None = None
+    end_to_end_payload_bits_per_second: float | None = None
+    per_frame_bit_accuracy_mean: float | None = None
+    per_frame_bit_accuracy_min: float | None = None
+    per_frame_bit_accuracy_p10: float | None = None
+    per_frame_nc_mean: float | None = None
+    per_frame_nc_min: float | None = None
+    per_frame_nc_p10: float | None = None
+    frames_to_vote_nc_090: int | None = None
+    frames_to_vote_nc_095: int | None = None
+    frames_to_exact_recovery: int | None = None
+    per_frame_report_path: str | None = None
     warmup_frames: int = 0
     timing_distributions: dict[str, Any] | None = None
     configuration_sha256: str | None = None
@@ -395,6 +409,7 @@ def extract_video_method(
     key_path: str | Path,
     output_watermark_path: str | Path,
     report_path: str | Path | None = None,
+    per_frame_report_path: str | Path | None = None,
     reference_watermark_path: str | Path | None = None,
     max_frames: int | None = None,
     warmup_frames: int = 10,
@@ -409,10 +424,16 @@ def extract_video_method(
     temporal_mode = str(key_payload.get("temporal_vote_mode", "hard"))
     if temporal_mode not in {"hard", "confidence_weighted"}:
         raise ValueError(f"Unsupported temporal vote mode: {temporal_mode}")
+    reference = (
+        load_binary_watermark(reference_watermark_path, size=int(frame_key.watermark_shape[0]))
+        if reference_watermark_path is not None else None
+    )
 
     cv2, cap, width, height, fps = _open_video(input_video_path)
     decoded_frames: list[np.ndarray] = []
     recovered_frames: list[np.ndarray] = []
+    per_frame_recovered: list[np.ndarray] = []
+    per_frame_rows: list[dict[str, Any]] = []
     decode_times: list[float] = []
     color_times: list[float] = []
     kernel_times: list[float] = []
@@ -443,9 +464,22 @@ def extract_video_method(
                 current_key = frame_keys[frame_count] if frame_count < len(frame_keys) else frame_key
             if method_id == "proposal" and temporal_mode == "confidence_weighted":
                 decoded_frames.append(frame_rgb)
+                frame_recovered = None
             else:
-                recovered_frames.append(extract(frame_rgb, current_key))
+                frame_recovered = extract(frame_rgb, current_key)
+                recovered_frames.append(frame_recovered)
             t3 = time.perf_counter_ns()
+            # Per-frame robustness is collected outside the measured extraction
+            # boundary when confidence-weighted voting needs a separate hard decode.
+            if reference is not None:
+                if frame_recovered is None:
+                    frame_recovered = extract(frame_rgb, current_key)
+                per_frame_recovered.append(frame_recovered)
+                per_frame_rows.append({
+                    "frame_id": int(frame_count),
+                    "bit_accuracy": float(bit_accuracy(reference, frame_recovered)),
+                    "nc": float(nc_binary(reference, frame_recovered)),
+                })
             decode_times.append((t1 - t0) / 1e6)
             color_times.append((t2 - t1) / 1e6)
             kernel_times.append((t3 - t2) / 1e6)
@@ -465,13 +499,40 @@ def extract_video_method(
     output.parent.mkdir(parents=True, exist_ok=True)
     save_image(output, recovered)
 
-    reference = None
     accuracy = None
     nc = None
-    if reference_watermark_path is not None:
-        reference = load_binary_watermark(reference_watermark_path, size=int(frame_key.watermark_shape[0]))
+    if reference is not None:
         accuracy = bit_accuracy(reference, recovered)
         nc = nc_binary(reference, recovered)
+
+    per_frame_accuracy = [float(row["bit_accuracy"]) for row in per_frame_rows]
+    per_frame_nc = [float(row["nc"]) for row in per_frame_rows]
+    running_vote_nc: list[float] = []
+    if reference is not None and per_frame_recovered:
+        cumulative = np.zeros_like((reference > 127).astype(np.int64), dtype=np.int64)
+        for index, frame_rec in enumerate(per_frame_recovered, start=1):
+            cumulative += (np.asarray(frame_rec) > 127).astype(np.int64)
+            vote = (2 * cumulative >= index).astype(np.uint8) * 255
+            vote_nc = float(nc_binary(reference, vote))
+            running_vote_nc.append(vote_nc)
+            per_frame_rows[index - 1]["running_vote_nc"] = vote_nc
+
+    def first_vote_frame(threshold: float) -> int | None:
+        for index, value in enumerate(running_vote_nc, start=1):
+            if value >= threshold:
+                return index
+        return None
+
+    resolved_per_frame_report: Path | None = None
+    if per_frame_rows:
+        if per_frame_report_path is not None:
+            resolved_per_frame_report = Path(per_frame_report_path)
+        elif report_path is not None:
+            rp = Path(report_path)
+            resolved_per_frame_report = rp.with_name(f"{rp.stem}_per_frame.csv")
+        else:
+            resolved_per_frame_report = output.with_name(f"{output.stem}_per_frame.csv")
+        save_csv(resolved_per_frame_report, per_frame_rows)
 
     d_decode = _dist(decode_times, warmup_frames)
     d_color = _dist(color_times, warmup_frames)
@@ -479,6 +540,8 @@ def extract_video_method(
     d_total = _dist(total_times, warmup_frames)
     vote_per_frame = vote_ms / max(frame_count, 1)
     algorithm_ms = d_color["median_ms"] + d_kernel["median_ms"] + vote_per_frame
+    end_to_end_ms = d_total["median_ms"] + vote_per_frame
+    key_size_bytes = Path(key_path).stat().st_size
     stats = VideoWatermarkStats(
         mode="per_frame_full",
         input_video=str(input_video_path),
@@ -502,17 +565,32 @@ def extract_video_method(
         watermark_kernel_ms_median=d_kernel["median_ms"],
         temporal_vote_ms_median=vote_per_frame,
         algorithm_total_ms_median=algorithm_ms,
-        end_to_end_ms_median=d_total["median_ms"] + vote_per_frame,
+        end_to_end_ms_median=end_to_end_ms,
         kernel_fps=1000.0 / max(d_kernel["median_ms"], 1e-9),
         algorithm_fps=1000.0 / max(algorithm_ms, 1e-9),
-        end_to_end_fps=1000.0 / max(d_total["median_ms"] + vote_per_frame, 1e-9),
-        real_time_factor=(1000.0 / max(d_total["median_ms"] + vote_per_frame, 1e-9)) / fps,
+        end_to_end_fps=1000.0 / max(end_to_end_ms, 1e-9),
+        real_time_factor=(1000.0 / max(end_to_end_ms, 1e-9)) / fps,
         payload_bits=int(np.prod(frame_key.watermark_shape)),
         common_bits_per_frame=int(np.prod(frame_key.watermark_shape)),
         payload_bits_per_second=payload_throughput_bps(
             int(np.prod(frame_key.watermark_shape)), d_kernel["median_ms"]
         ),
-        side_information_bytes_per_frame=Path(key_path).stat().st_size / max(frame_count, 1),
+        side_information_bytes_per_frame=key_size_bytes / max(frame_count, 1),
+        serialized_key_bytes=int(key_size_bytes),
+        side_information_metric_label="amortized serialized sequence-key metadata; not frame-dependent transmission",
+        end_to_end_payload_bits_per_second=payload_throughput_bps(
+            int(np.prod(frame_key.watermark_shape)), end_to_end_ms
+        ),
+        per_frame_bit_accuracy_mean=float(np.mean(per_frame_accuracy)) if per_frame_accuracy else None,
+        per_frame_bit_accuracy_min=float(np.min(per_frame_accuracy)) if per_frame_accuracy else None,
+        per_frame_bit_accuracy_p10=float(np.percentile(per_frame_accuracy, 10)) if per_frame_accuracy else None,
+        per_frame_nc_mean=float(np.mean(per_frame_nc)) if per_frame_nc else None,
+        per_frame_nc_min=float(np.min(per_frame_nc)) if per_frame_nc else None,
+        per_frame_nc_p10=float(np.percentile(per_frame_nc, 10)) if per_frame_nc else None,
+        frames_to_vote_nc_090=first_vote_frame(0.90),
+        frames_to_vote_nc_095=first_vote_frame(0.95),
+        frames_to_exact_recovery=first_vote_frame(1.0),
+        per_frame_report_path=str(resolved_per_frame_report) if resolved_per_frame_report else None,
         warmup_frames=min(int(warmup_frames), frame_count),
         timing_distributions={
             "decode": d_decode, "color": d_color, "kernel": d_kernel,
@@ -520,7 +598,7 @@ def extract_video_method(
         },
         configuration_sha256=str(key_payload.get("configuration_sha256")),
     )
-    result = {"stats": asdict(stats), "key": key_payload}
+    result = {"stats": asdict(stats), "key": key_payload, "per_frame": per_frame_rows}
     if report_path is not None:
         save_json(report_path, result)
     return result

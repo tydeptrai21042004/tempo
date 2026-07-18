@@ -58,13 +58,22 @@ def test_small_video_roundtrip(tmp_path):
         step=DEFAULT_CONFIG.step, max_frames=6, warmup_frames=1,
         method_params=DEFAULT_CONFIG.to_dict(),
     )["stats"]
-    xr = extract_video_method(
+    report = tmp_path / "extract_report.json"
+    result = extract_video_method(
         input_video_path=marked, key_path=key, output_watermark_path=recovered,
-        reference_watermark_path=wm_path, max_frames=6, warmup_frames=1,
-    )["stats"]
+        report_path=report, reference_watermark_path=wm_path,
+        max_frames=6, warmup_frames=1,
+    )
+    xr = result["stats"]
     assert er["frame_count"] == 6
     assert er["protocol_kind"] == "common_framewise_video_adapter"
     assert xr["bit_accuracy"] >= 0.90
+    assert xr["per_frame_bit_accuracy_mean"] is not None
+    assert xr["per_frame_nc_mean"] is not None
+    assert xr["serialized_key_bytes"] > 0
+    assert xr["end_to_end_payload_bits_per_second"] > 0
+    assert Path(xr["per_frame_report_path"]).is_file()
+    assert len(result["per_frame"]) == 6
     assert Path(recovered).is_file()
 
 

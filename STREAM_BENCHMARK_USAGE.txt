@@ -25,3 +25,12 @@ DEW uses paper-style keyed differential-energy regions and requires at least
 two 8x8 DCT blocks per bit. The stream benchmark therefore uses a 16x16
 watermark (256 bits) by default. Existing 4096-bit image/video protocols are
 left unchanged and do not silently reduce their payload.
+
+Revision 1.1 notes:
+  - virtual and realtime modes now both use a drop-oldest bounded queue;
+  - on_time_completion_ratio is computed over all generated frames;
+  - sustained_realtime_end_to_end requires complete processing, no drops,
+    effective FPS at or above the target, and p95 end-to-end latency within
+    the frame deadline;
+  - proposal traces include fast/recovery extraction path, pilot score,
+    selected synchronization candidate, shift, and integer-closure counters.
