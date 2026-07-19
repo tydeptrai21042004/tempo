@@ -15,7 +15,8 @@ from realtime_watermark.core import (
 from realtime_watermark.methods import warmup_numba
 from realtime_watermark.fair_benchmark import make_independent_calibration_host
 from realtime_watermark.proposals.jilp_qim.config import JILPQIMConfig
-from realtime_watermark.registry import embed, extract
+from realtime_watermark.proposals.jilp_qim.method import extract_jilp_qim
+from realtime_watermark.registry import embed
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 
@@ -36,13 +37,17 @@ def evaluate_variant(
     t0 = time.perf_counter()
     watermarked, key = embed("proposal", host, wm, seed=seed, repeat=1, method_params=config.to_dict())
     t1 = time.perf_counter()
-    clean = extract(watermarked, key)
+    clean, clean_meta = extract_jilp_qim(
+        watermarked, key, sync=True, return_meta=True
+    )
     t2 = time.perf_counter()
     attack_rows: list[dict[str, Any]] = []
     for attack_name, attack_fn in default_attacks(attack_preset):
         attacked = watermarked if attack_name == "clean" else attack_fn(watermarked)
         e0 = time.perf_counter()
-        recovered = extract(attacked, key)
+        recovered, extraction_meta = extract_jilp_qim(
+            attacked, key, sync=True, return_meta=True
+        )
         e1 = time.perf_counter()
         attack_rows.append({
             "host_id": host_id,
@@ -54,8 +59,16 @@ def evaluate_variant(
             "nc": nc_binary(wm, recovered),
             "bit_accuracy": bit_accuracy(wm, recovered),
             "extract_ms": (e1 - e0) * 1000.0,
+            "extraction_path": extraction_meta.get("path", ""),
+            "sync_candidate": extraction_meta.get("candidate", ""),
+            "pilot_score": extraction_meta.get("score", float("nan")),
+            "pilot_valid": extraction_meta.get("pilot_valid", 0),
+            "estimated_shift_y": extraction_meta.get("shift_y", 0),
+            "estimated_shift_x": extraction_meta.get("shift_x", 0),
         })
     non_clean = [r for r in attack_rows if r["attack"] != "clean"]
+    recovery_rows = [r for r in non_clean if r.get("extraction_path") == "wide_sync_jilp"]
+    fast_rows = [r for r in non_clean if r.get("extraction_path") == "raw_fast_jilp"]
     return {
         "host_id": host_id,
         "host_file": host_file,
@@ -79,6 +92,17 @@ def evaluate_variant(
         "min_attack_nc": float(min(r["nc"] for r in non_clean)) if non_clean else float("nan"),
         "embed_ms": (t1 - t0) * 1000.0,
         "extract_clean_ms": (t2 - t1) * 1000.0,
+        "clean_extraction_path": clean_meta.get("path", ""),
+        "integer_lattice_unit_updates": int(key.params.get("integer_lattice_unit_updates", 0)),
+        "integer_lattice_unresolved": int(key.params.get("integer_lattice_unresolved", 0)),
+        "integer_lattice_corrected_blocks": int(key.params.get("integer_lattice_corrected_blocks", 0)),
+        "integer_lattice_initial_parity_failures": int(key.params.get("integer_lattice_initial_parity_failures", 0)),
+        "integer_lattice_initial_guard_failures": int(key.params.get("integer_lattice_initial_guard_failures", 0)),
+        "integer_lattice_payload_blocks": int(key.params.get("integer_lattice_payload_blocks", wm.size)),
+        "recovery_invocation_rate": float(len(recovery_rows) / max(len(non_clean), 1)),
+        "fast_path_attack_ms_median": float(np.median([r["extract_ms"] for r in fast_rows])) if fast_rows else float("nan"),
+        "recovery_path_attack_ms_median": float(np.median([r["extract_ms"] for r in recovery_rows])) if recovery_rows else float("nan"),
+        "recovery_path_attack_ms_p95": float(np.percentile([r["extract_ms"] for r in recovery_rows], 95)) if recovery_rows else float("nan"),
         "attack_rows": attack_rows,
         "key": asdict(key),
     }
@@ -142,6 +166,16 @@ def aggregate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "min_attack_nc": avg("min_attack_nc"),
             "embed_ms": avg("embed_ms"),
             "extract_clean_ms": avg("extract_clean_ms"),
+            "integer_lattice_unit_updates": avg("integer_lattice_unit_updates"),
+            "integer_lattice_unresolved": avg("integer_lattice_unresolved"),
+            "integer_lattice_corrected_blocks": avg("integer_lattice_corrected_blocks"),
+            "integer_lattice_initial_parity_failures": avg("integer_lattice_initial_parity_failures"),
+            "integer_lattice_initial_guard_failures": avg("integer_lattice_initial_guard_failures"),
+            "integer_lattice_payload_blocks": avg("integer_lattice_payload_blocks"),
+            "recovery_invocation_rate": avg("recovery_invocation_rate"),
+            "fast_path_attack_ms_median": avg("fast_path_attack_ms_median"),
+            "recovery_path_attack_ms_median": avg("recovery_path_attack_ms_median"),
+            "recovery_path_attack_ms_p95": avg("recovery_path_attack_ms_p95"),
         })
     return output
 

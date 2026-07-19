@@ -99,6 +99,8 @@ def main() -> None:
                 continue
             import numpy as np
 
+            recovery_rows = [row for row in non_clean if row.get("extraction_path") == "wide_sync_jilp"]
+            fast_rows = [row for row in non_clean if row.get("extraction_path") == "raw_fast_jilp"]
             summary.append(
                 {
                     "watermark_index": watermark_index,
@@ -117,6 +119,16 @@ def main() -> None:
                     "global_worst_nc": float(np.min([row["nc_bipolar"] for row in non_clean])),
                     "mean_embed_ms": float(np.mean([row["embed_ms"] for row in clean])),
                     "mean_clean_extract_ms": float(np.mean([row["clean_extract_ms"] for row in clean])),
+                    "mean_integer_lattice_unit_updates": float(np.mean([row.get("integer_lattice_unit_updates", 0) for row in clean])),
+                    "total_integer_lattice_unresolved": int(sum(int(row.get("integer_lattice_unresolved", 0)) for row in clean)),
+                    "mean_integer_lattice_corrected_blocks": float(np.mean([row.get("integer_lattice_corrected_blocks", 0) for row in clean])),
+                    "mean_integer_lattice_initial_parity_failures": float(np.mean([row.get("integer_lattice_initial_parity_failures", 0) for row in clean])),
+                    "mean_integer_lattice_initial_guard_failures": float(np.mean([row.get("integer_lattice_initial_guard_failures", 0) for row in clean])),
+                    "mean_integer_lattice_payload_blocks": float(np.mean([row.get("integer_lattice_payload_blocks", 0) for row in clean])),
+                    "recovery_invocation_rate": float(len(recovery_rows) / max(len(non_clean), 1)),
+                    "fast_path_extract_ms_median": float(np.median([row["extract_ms"] for row in fast_rows])) if fast_rows else float("nan"),
+                    "recovery_path_extract_ms_median": float(np.median([row["extract_ms"] for row in recovery_rows])) if recovery_rows else float("nan"),
+                    "recovery_path_extract_ms_p95": float(np.percentile([row["extract_ms"] for row in recovery_rows], 95)) if recovery_rows else float("nan"),
                     "proposal_configuration_sha256": proposal.sha256() if method_id == "proposal" else "",
                 }
             )
@@ -134,6 +146,8 @@ def main() -> None:
                         "mean_nc": float(np.mean([row["nc_bipolar"] for row in attack_group])),
                         "mean_ser_4bit": float(np.mean([row["ser_4bit"] for row in attack_group])),
                         "mean_extract_ms": float(np.mean([row["extract_ms"] for row in attack_group])),
+                        "recovery_invocation_rate": float(np.mean([row.get("extraction_path") == "wide_sync_jilp" for row in attack_group])),
+                        "mean_pilot_score": float(np.nanmean([float(row.get("pilot_score", float("nan"))) for row in attack_group])) if any(str(row.get("pilot_score", "")) not in {"", "nan"} for row in attack_group) else float("nan"),
                     }
                 )
 
