@@ -40,6 +40,7 @@ WM_SIZE="${WM_SIZE:-64}"
 HP_HOSTS="${HP_HOSTS:-3}"
 VIDEO_CODEC="${VIDEO_CODEC:-mp4v}"
 VIDEO_INPUT="${VIDEO_INPUT:-}"
+RESUME_FROM_VIDEO="${KAGGLE_RESUME_FROM_VIDEO:-0}"
 
 if [[ "$MODE" == "quick" ]]; then
   HP_ATTACK_PRESET="${HP_ATTACK_PRESET:-smoke}"
@@ -63,9 +64,20 @@ else
   VIDEO_STREAM_CHANNELS="${VIDEO_STREAM_CHANNELS:-clean,jpeg90,jpeg70,jpeg40,gaussian5,blur3,drop10}"
 fi
 
-rm -rf "$REPORT_ROOT" "$SELECTED_DATA_DIR" "$MASTER_ZIP"
+if [[ "$RESUME_FROM_VIDEO" != "1" ]]; then
+  rm -rf "$REPORT_ROOT" "$SELECTED_DATA_DIR" "$MASTER_ZIP"
+fi
 mkdir -p "$REPORT_ROOT"
-printf "Kaggle pipeline started: %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$REPORT_ROOT/full_run.log"
+printf 'Kaggle pipeline %s: %s\n' "$( [[ "$RESUME_FROM_VIDEO" == "1" ]] && echo resumed || echo started )" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$REPORT_ROOT/full_run.log"
+HOST_DIR="$SELECTED_DATA_DIR/host"
+WATERMARK_DIR="$SELECTED_DATA_DIR/watermark"
+SELECTED_CONFIG="$REPORT_ROOT/configs/proposal_selected_all_watermarks.json"
+DEV_HOST_DIR="$REPORT_ROOT/holdout/development"
+TEST_HOST_DIR="$REPORT_ROOT/holdout/test"
+VIDEO_CORPUS_MANIFEST="${VIDEO_CORPUS_MANIFEST:-configs/video_evidence_sources.json}"
+VIDEO_CACHE_DIR="${VIDEO_CACHE_DIR:-$WORK_ROOT/tempo-video-cache}"
+VIDEO_PREPARED_DIR="${VIDEO_PREPARED_DIR:-$WORK_ROOT/tempo-video-prepared}"
+VIDEO_CORPUS_PATH="$REPORT_ROOT/video_sources/corpus.json"
 
 stage() {
   echo
@@ -74,6 +86,12 @@ stage() {
   echo "======================================================================"
 }
 
+if [[ "$RESUME_FROM_VIDEO" == "1" ]]; then
+  for item in "$HOST_DIR" "$WATERMARK_DIR" "$DEV_HOST_DIR" "$TEST_HOST_DIR" "$SELECTED_CONFIG" "$VIDEO_CORPUS_PATH" "$REPORT_ROOT/all_methods_all_metrics/all_watermarks_all_methods_all_metrics.csv"; do
+    if [[ ! -e "$item" ]]; then echo "Cannot resume: missing $item" >&2; exit 2; fi
+  done
+  echo "Resume mode: preserving prior image and ablation evidence, restarting video with validated checkpoints."
+else
 stage "1. VERIFY SOURCE"
 "$PYTHON_BIN" scripts/verify_source_manifest.py \
   --allow-missing --report-dir "$REPORT_ROOT/manifest"
@@ -85,6 +103,11 @@ stage "2. SELECT ALL BMP HOSTS EXCEPT LENA AND BOTH PNG WATERMARKS"
   --manifest-dir "$REPORT_ROOT"
 HOST_DIR="$SELECTED_DATA_DIR/host"
 WATERMARK_DIR="$SELECTED_DATA_DIR/watermark"
+
+stage "2A. PREFLIGHT 4096-BIT HOST AND WATERMARK INPUTS"
+"$PYTHON_BIN" scripts/reviewer_preflight.py \
+  --host-dir "$HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
+  --out "$REPORT_ROOT/validation/dataset_preflight.json" --wm-size "$WM_SIZE"
 
 stage "3. RUN ALL TESTS"
 mkdir -p "$REPORT_ROOT/validation"
@@ -180,6 +203,10 @@ fi
 ABLATION_ARGS+=(--video-input "$VIDEO_ABLATION_INPUT")
 "$PYTHON_BIN" scripts/run_multiwatermark_ablation.py "${ABLATION_ARGS[@]}"
 
+fi  # End of pre-video stages; resume preserves all outputs from steps 1--7.
+
+SUITE_RESUME_ARGS=()
+if [[ "$RESUME_FROM_VIDEO" == "1" ]]; then SUITE_RESUME_ARGS+=(--resume); fi
 stage "8-9. RUN REAL VIDEO CORPUS, BOTH WATERMARKS AND LIVE DEADLINE TESTS"
 "$PYTHON_BIN" scripts/run_video_corpus_suite.py \
   --corpus "$VIDEO_CORPUS_PATH" --watermark-dir "$WATERMARK_DIR" \
@@ -187,7 +214,7 @@ stage "8-9. RUN REAL VIDEO CORPUS, BOTH WATERMARKS AND LIVE DEADLINE TESTS"
   --stream-out "$REPORT_ROOT/live_stream" --mode "$MODE" \
   --max-frames "$VIDEO_FRAMES" --stream-frames "$STREAM_FRAMES" \
   --codec "$VIDEO_CODEC" --python "$PYTHON_BIN" \
-  --channels "$VIDEO_STREAM_CHANNELS" --resolutions "$STREAM_RESOLUTIONS"
+  --channels "$VIDEO_STREAM_CHANNELS" --resolutions "$STREAM_RESOLUTIONS" "${SUITE_RESUME_ARGS[@]}"
 
 stage "9A. VERIFY WALL-CLOCK THROUGHPUT DENOMINATORS"
 THROUGHPUT_ARGS=()

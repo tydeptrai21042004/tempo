@@ -1,0 +1,67 @@
+TEMPO Kaggle patch: complete run + crash-safe resume
+====================================================
+APPLY PATCH
+Extract TEMPO_REVIEWER_EXPERIMENT_PATCH.zip at repository root, preserving
+relative paths (src/, scripts/, tests/, SOURCE_MANIFEST.sha256).
+Commit/upload these changed files to github.com/tydeptrai21042004/tempo.
+Do not upload the patch under a new nested folder; unzip OVER repository root.
+
+FIRST FULL CPU RUN (KAGGLE CELL)
+-------------------------------
+import os, subprocess
+from pathlib import Path
+repo=Path('/kaggle/working/tempo')
+if not repo.exists():
+    subprocess.run(['git','clone','--depth','1','https://github.com/tydeptrai21042004/tempo.git',str(repo)],check=True)
+else:
+    subprocess.run(['git','fetch','origin','main'],cwd=repo,check=True)
+    subprocess.run(['git','reset','--hard','origin/main'],cwd=repo,check=True)
+env=os.environ.copy()
+env.update(CUDA_VISIBLE_DEVICES='-1',NUMBA_NUM_THREADS='4',OMP_NUM_THREADS='1',
+           OPENBLAS_NUM_THREADS='1',MKL_NUM_THREADS='1',PYTHONHASHSEED='0',
+           KAGGLE_REPORT_ROOT='/kaggle/working/TEMPO_FULL_RESULTS',
+           KAGGLE_SELECTED_DATA_DIR='/kaggle/working/TEMPO_SELECTED_DATA',
+           KAGGLE_MASTER_ZIP='/kaggle/working/TEMPO_PIPELINE_RESULTS.zip',
+           VIDEO_FRAMES='180',STREAM_FRAMES='180',FAIL_ON_INCOMPLETE='0')
+subprocess.run(['bash','scripts/kaggle_auto_video.sh','full'],cwd=repo,env=env,check=True)
+print('/kaggle/working/TEMPO_PIPELINE_RESULTS.zip')
+
+IF AN EXISTING KAGGLE SESSION FAILED DURING VIDEO STAGE
+--------------------------------------------------------
+Do NOT rerun the original monolithic notebook cell, which deletes its results.
+First update code in the SAME /kaggle/working/tempo directory to the patched
+commit (git fetch + git reset --hard origin/main), without deleting the report
+or selected-data directories. Then run in the SAME session:
+
+import os,subprocess
+from pathlib import Path
+repo=Path('/kaggle/working/tempo')
+env=os.environ.copy()
+env.update(CUDA_VISIBLE_DEVICES='-1',NUMBA_NUM_THREADS='4',OMP_NUM_THREADS='1',
+    OPENBLAS_NUM_THREADS='1',OMP_DYNAMIC='FALSE',
+    KAGGLE_RESUME_FROM_VIDEO='1',
+    KAGGLE_REPORT_ROOT='/kaggle/working/TEMPO_FULL_RESULTS',
+    KAGGLE_SELECTED_DATA_DIR='/kaggle/working/TEMPO_SELECTED_DATA',
+    KAGGLE_MASTER_ZIP='/kaggle/working/TEMPO_PIPELINE_RESULTS.zip',
+    VIDEO_FRAMES='180',STREAM_FRAMES='180',FAIL_ON_INCOMPLETE='0')
+subprocess.run(['bash','scripts/kaggle_auto_video.sh','full'],cwd=repo,env=env,check=True)
+
+Resumption requires existing verified code/data paths and already completed
+image/ablation results. If the Kaggle session has expired and its scratch
+storage is gone, resume cannot recover discarded data.
+
+REPORTS TO CHECK
+----------------
+- reviewer_completeness.json: pass/fail evidence checks + remaining manuscript work
+- reviewer_experiments/geometry_and_targeted_attacks.csv
+- reviewer_experiments/orthogonality_and_integer.csv
+- integer_boundaries/rejection_summary.csv
+- detection/detection_manifest.json and heldout_roc.csv
+- matched_psnr/matched_psnr_strict_paired_attacks.csv
+- statistical_evidence/method_host_cluster_ci.csv
+- video/all_watermarks_video_summary.csv (recovered_is_constant column)
+- video/video_corpus_stream_summary.csv and throughput_audit/
+- validation/dataset_preflight.json and validation/test_results.json if generated
+
+The separate proposed-method candidate study is optional and not part of the
+frozen main protocol. If run, report it separately from frozen-configuration results.

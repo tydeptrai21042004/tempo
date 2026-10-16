@@ -99,13 +99,18 @@ def check(root:Path,mode='full'):
     expected_n=2 if full else 1
     stream_manifest=[json.loads(p.read_text()) for p in streams]
     stream_summaries=[rows(p.parent/'ALL_STREAM_realtime_summary.csv') for p in streams]
-    required_stream_conditions={('1280x720','clean'),('1280x720','jpeg70')} if full else {('512x512','clean')}
-    record('720p_deadline_stress',len(stream_summaries)>=expected_n and all(
-       required_stream_conditions.issubset({(r.get('resolution'),r.get('channel')) for r in ss})
-       and all(r.get('pace_mode')=='realtime' and r.get('payload_bits')=='4096' and
-               r.get('service_ms_p95','')!='' and r.get('effective_output_fps','')!=''
-               for r in ss) for ss in stream_summaries),
-       'Required 720p JPEG70/clean wall-clock p95/FPS observations missing')
+    # Non-HD sources are intentionally evaluated at 512x512 only. Do not
+    # incorrectly demand native 720p observations for every source.
+    all_streams_valid=all(
+        ('512x512','clean') in {(r.get('resolution'),r.get('channel')) for r in ss}
+        and all(r.get('pace_mode')=='realtime' and r.get('payload_bits')=='4096'
+                and r.get('service_ms_p95','')!='' and r.get('effective_output_fps','')!=''
+                for r in ss) for ss in stream_summaries)
+    hd_streams=sum({('1280x720','clean'),('1280x720','jpeg70')}.issubset(
+        {(r.get('resolution'),r.get('channel')) for r in ss}) for ss in stream_summaries)
+    record('720p_deadline_stress',len(stream_summaries)>=expected_n and
+        all_streams_valid and (not full or hd_streams>=2),
+        'Required 512x512 on each stream plus 720p clean/JPEG70 on native HD streams missing')
     ta_path=root/'throughput_audit'/'wallclock_throughput_manifest.json'
     ta=json.loads(ta_path.read_text()) if ta_path.is_file() else {}
     record('throughput_formula_reconciled',ta.get('status')=='complete' and ta.get('observations',0)>0 and
@@ -149,6 +154,10 @@ def check(root:Path,mode='full'):
            and all(r.get('service_ms_p95','')!='' and r.get('effective_output_fps','')!='' and
                    r.get('real_video')=='True' for r in sr)),
            'Real-video 4096-bit wall-clock FPS/p95 missing; must include both watermarks on native HD clip')
+    record('constant_recovery_accounted',bool(vrows) and all(
+        r.get('recovered_is_constant') in {'True','False'} and
+        r.get('ber','')!='' and r.get('nc','')!='' for r in vrows),
+        'Video benchmark must score constant extracted watermarks, never abort or omit them')
     record('video_main',bool(rows(root/'video'/'all_watermarks_video_summary.csv')),
            'Framewise video benchmark absent')
     record('structural_ablation',any((root/'ablation').rglob('*.csv')),

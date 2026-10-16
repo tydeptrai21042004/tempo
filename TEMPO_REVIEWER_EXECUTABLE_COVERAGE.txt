@@ -1,0 +1,99 @@
+TEMPO reviewer experiment coverage and verified limitations
+==========================================================
+Source snapshot assessed: tempo-main ZIP, commit 27cd4eb426e82c206be94b3a84f754da7df620aa.
+The two supplied reviewer files are distinct: the DCT-QIM TEMPO review is directly applicable;
+the DWT-Hessenberg review belongs to another manuscript and is only a source of generally
+transferable experimental practices. The code does NOT implement DWT/Hessenberg/BSS/Firefly.
+No mathematical carrier construction, quantization rule, pilot definition, scrambling algorithm,
+existing baseline method, or frozen parameter file is changed by this patch.
+
+DIRECT TEMPO REVIEWER CONCERNS (from the second supplied text file)
+----------------------------------------------------------------------------
+Item / runnable evidence and necessary interpretation
+R1-2, R1-4: commit provenance, versioned environment, host-watermark-attack protocol,
+    tables and timing denominators -> scripts/kaggle_pipeline.sh, scripts/reviewer_completeness.py,
+    scripts/reviewer_throughput_audit.py, run_manifest.txt, pip_freeze.txt.
+R1-3: uncertainty unit and effect sizes -> scripts/reviewer_statistics.py,
+    scripts/reviewer_matched_pairs.py; hosts are the primary repeated-measure clusters.
+R1-5 and follow-ups 1-2: compare actual FPS and 4096 x actual effective FPS, p95/on-time,
+    distinguish pre-codec frame PSNR, stream PSNR, algorithm FPS and wall-clock output FPS.
+    Source is reviewer_throughput_audit.py, actual final manuscript tables must be reconciled.
+R2-1, R5-2: float orthogonality vs 8-bit rounding, coordinate leakage with geometry ->
+    reviewer_experiments.py orthogonality_and_integer.csv, geometry_and_targeted_attacks.csv.
+R2-2, R5-1: off-grid 0.5, 2.5, 7.5, 15 degree angles, scale, shear, sub-pixel shifts ->
+    reviewer_experiments.py; finite search does not mean universal invariance.
+R2-4: temporal vote frames and error correlation -> reviewer_temporal_limits.py. No ECC claim.
+R2-5, R5-7: same-case matched-PSNR, no cross-category unequal-strength rankings ->
+    run_multiwatermark_fair_benchmark.py, reviewer_matched_pairs.py.
+R2-7: joint step/pilot-strength/pilot-count sensitivity -> reviewer_joint_sensitivity.py.
+R2-9, R5-3, R5-4: integer correction counts, rejection at black/white, shadow/highlight ->
+    reviewer_experiments.py, reviewer_integer_boundaries.py; greedy correction is not proven
+    globally minimum energy after 8-bit rounding/clipping.
+R2-10: disable scrambling in existing structural ablation -> run_multiwatermark_ablation.py;
+    scrambling does not provide cryptographic authentication.
+R2-11: payload-size variation (256/1024/2304/4096) and attack sensitivity ->
+    reviewer_experiments.py capacity_sensitivity.csv, capacity_by_payload_attack.csv.
+R5-5: real-time deadline under 1280x720 and JPEG70 -> live_stream_benchmark.py,
+    reviewer_throughput_audit.py; rates below deadline count as negative results.
+R5-6: recent independent blind video comparisons -> NOT IMPLEMENTED; faithful
+    source-backed implementations and a documented 4096-bit, detector-matched protocol
+    are needed before these comparisons may be claimed. Existing baselines remain intact.
+R5-8: public DCT coefficient zeroing/bandstop/pilot suppression ->
+    reviewer_experiments.py targeted attacks, not a certified defense.
+R5-9: ROC, false-positive/positive samples and wrong-key scores ->
+    reviewer_detection_protocol.py with development-only threshold calibration.
+R2-3, R2-6, R2-8 and R1 manuscript discussion: color conversion / watermark-security /
+    crypto/memristor/Arnold citations -> writing and scholarly reference checks remain; not
+    empirical code claims. Citation requests are not auto-completed by executable scripts.
+
+TRANSFERABLE LESSONS FROM THE OTHER DWT-HESSENBERG REVIEW (first supplied text)
+----------------------------------------------------------------------------
+Review 1: blind vs semi-blind: report real extraction requirements from per-method
+    serialized key/side-information metrics. Do not describe an informed baseline as blind.
+    Key/side-information bytes: run_multiwatermark_video.py / protocol CSV.
+Review 1: wrong key / security -> reviewer_detection_protocol.py. A seed is not a
+    256-bit secret, Arnold scrambling is not cryptographic encryption.
+Review 1: independent tuning -> create_reviewer_holdout.py,
+    search_proposal_hyperparameters.py. No held-out data for selection.
+Review 1: confidence interval -> reviewer_statistics.py; host cluster.
+Review 1: geometric severity -> reviewer_experiments.py.
+Review 1: measured CPU timing / metadata overhead -> Kaggle runtime manifest,
+    matched-PSNR timing and video key bytes.
+Review 2: block-size = 4, DWT LL/LH/HL/HH, Hessenberg Q/H, BSS, Firefly,
+    and RGB channel ablations specifically for the DWT-Hessenberg method ->
+    NOT APPLICABLE TO TEMPO as formulated. Treat as manuscript-specific items,
+    not a requirement to alter the DCT-QIM proposal or introduce a different method.
+Review 2: newer deep-learning baselines or learned diffusion attacks -> NOT RUN;
+    cannot silently add fake models or call a DCT-zeroing attack a diffusion model.
+Review 3: strong Gaussian 0.05, speckle 0.03, JPEG30/JPEG40 ->
+    reviewer_experiments.py (variance is normalized intensity variance).
+Review 3: image galleries -> reviewer_gallery.py; images are real extracted outputs.
+Review 3: limitations, novelty comparison, methods and citation requests -> require
+    final manuscript editing, outside numerical pipeline.
+
+RUNTIME FIXES IN THIS PATCH
+----------------------------------------------------------------------------
+- Recovered all-black/all-white watermark is a measurable failed extraction,
+  not an invalid *input* watermark. BER/NC and a constant-recovery flag are recorded.
+- Real-video suite checks exact watermark-method pairs and can resume verified
+  completed jobs independently; it rejects incomplete/duplicated checkpoints.
+- Main pipeline KAGGLE_RESUME_FROM_VIDEO=1 preserves earlier image/ablation outputs.
+- Completeness checker requires 720p clean and JPEG70 only for native HD streams,
+  while all streams must have the 512x512 clean condition.
+- Dataset preflight verifies 12 usable hosts and two non-degenerate 64x64 originals
+  before long experiments, and leaves recovered watermarks unrestricted.
+- Source integrity manifest updated with all changed/new files.
+
+LOCAL VALIDATION IN THIS PATCH
+----------------------------------------------------------------------------
+120 Python unit/regression tests passed on the available local environment.
+Dataset selector chose 12 non-Lena hosts + 2 watermarks; input preflight passed.
+Framewise synthetic-fixture SMOKE: all five supported video methods x 2
+watermarks = 10 rows, completed. One local video corpus x 2 watermarks x
+quick streaming conditions completed; second invocation with --resume skipped
+only verified completed video and streaming jobs.
+No Kaggle CPU 11-hour exhaustive run, no independent recent SOTA/diffusion
+benchmark, and no actual public-video download were executed for this patch.
+A local synthetic SMOKE is not publishable real-video performance evidence.
+The reviewer_completeness.json generated in Kaggle is the falsifiable per-item
+record and must be inspected; a successful command alone is not publication proof.
