@@ -1,0 +1,98 @@
+--- a/src/realtime_watermark/core.py
++++ b/src/realtime_watermark/core.py
+@@ -46,14 +46,18 @@
+     return np.asarray(img, dtype=np.uint8)
+ 
+ 
+-def load_binary_watermark(path: str | Path | None, size: int = 64, threshold: int = 127) -> np.ndarray:
+-    """Load a non-degenerate binary watermark, preserving alpha-only logos.
++def load_binary_watermark(
++    path: str | Path | None, size: int = 64, threshold: int = 127,
++    *, allow_degenerate: bool = False,
++) -> np.ndarray:
++    """Load a binary watermark, preserving alpha-only logos.
+ 
+     Some transparent PNG logos store all visible structure in the alpha channel
+     while their RGB channels are uniformly black.  In that case converting
+     directly to luminance silently produces an all-zero payload.  This loader
+     selects the varying alpha channel only when RGB luminance is essentially
+-    flat and alpha is informative, then rejects one-symbol payloads.
++    flat and alpha is informative. Input payloads must have both symbols;
++    decoded outputs may explicitly allow one-symbol recovery failures.
+     """
+     if path is None:
+         binary = make_demo_watermark(size)
+@@ -69,7 +73,7 @@
+         img = gray_source.resize((size, size), Image.Resampling.NEAREST)
+         arr = np.asarray(img, dtype=np.uint8)
+         binary = np.where(arr >= threshold, 255, 0).astype(np.uint8)
+-    if np.unique(binary).size < 2:
++    if not allow_degenerate and np.unique(binary).size < 2:
+         raise ValueError(
+             "Degenerate watermark payload: the binarized watermark contains only one bit value. "
+             "Use a watermark containing both black and white pixels."
+--- a/scripts/run_multiwatermark_video.py
++++ b/scripts/run_multiwatermark_video.py
+@@ -8,6 +8,7 @@
+     ber,
+     bit_accuracy,
+     load_binary_watermark,
++    watermark_statistics,
+     nc_binary,
+     psnr,
+     save_csv,
+@@ -121,7 +122,12 @@
+                         f"expected={expected_hash}, actual={actual_hash}"
+                     )
+ 
+-            recovered = load_binary_watermark(recovered_path, size=args.wm_size)
++            # Constant recovered images are valid failure outcomes: do not discard
++            # them or fabricate missing robustness metrics. Input checks stay strict.
++            recovered = load_binary_watermark(
++                recovered_path, size=args.wm_size, allow_degenerate=True
++            )
++            recovered_stats = watermark_statistics(recovered)
+             disclosure = NATIVE_DISCLOSURES.get(method_id)
+             detector_type = disclosure.detector_type if disclosure is not None else "blind"
+             accuracy = float(bit_accuracy(original, recovered))
+@@ -142,6 +148,10 @@
+                     "precodec_mean_psnr": embedding["avg_frame_psnr_before_video_codec"],
+                     "bit_accuracy": accuracy,
+                     "ber": bit_error,
++                    "recovered_is_constant": bool(
++                        recovered_stats["zero_bits"] == 0 or recovered_stats["one_bits"] == 0
++                    ),
++                    "recovered_one_fraction": recovered_stats["one_fraction"],
+                     "empirical_error_probability": bit_error,
+                     "nc": float(nc_binary(original, recovered)),
+                     "ser_4bit": float(binary_symbol_error_rate(original > 127, recovered > 127, 4)),
+--- a/tests/test_watermark_loader_and_attacks.py
++++ b/tests/test_watermark_loader_and_attacks.py
+@@ -30,6 +30,27 @@
+         load_binary_watermark(path, size=16)
+ 
+ 
++
++@pytest.mark.parametrize("pixel", [0, 255])
++def test_constant_recovered_watermark_is_scored_but_not_accepted_as_input(tmp_path: Path, pixel: int):
++    from realtime_watermark.core import ber, nc_binary, psnr, ssim_gray
++
++    recovered_path = tmp_path / "recovered.png"
++    Image.fromarray(np.full((64, 64), pixel, dtype=np.uint8)).save(recovered_path)
++
++    # The original watermark still rejects constant payloads.
++    with pytest.raises(ValueError, match="Degenerate watermark"):
++        load_binary_watermark(recovered_path, size=64)
++
++    # The decoder's result must be measurable even when it is entirely wrong.
++    recovered = load_binary_watermark(recovered_path, size=64, allow_degenerate=True)
++    reference = np.tile([0, 255], 2048).astype(np.uint8).reshape(64, 64)
++    assert np.unique(recovered).tolist() == [pixel]
++    assert ber(reference, recovered) == 0.5
++    assert np.isfinite(nc_binary(reference, recovered))
++    assert np.isfinite(psnr(reference, recovered))
++    assert np.isfinite(ssim_gray(reference, recovered))
++
+ def test_new_standard_attacks_are_present_and_shape_preserving(host128):
+     attacks = dict(default_attacks("standard"))
+     for name in ("chroma420", "center_crop_resize90", "jpeg85_jpeg70", "screen_capture_light"):

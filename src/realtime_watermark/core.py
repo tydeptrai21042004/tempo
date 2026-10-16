@@ -46,14 +46,18 @@ def load_rgb(path: str | Path, mode: str = "full") -> np.ndarray:
     return np.asarray(img, dtype=np.uint8)
 
 
-def load_binary_watermark(path: str | Path | None, size: int = 64, threshold: int = 127) -> np.ndarray:
-    """Load a non-degenerate binary watermark, preserving alpha-only logos.
+def load_binary_watermark(
+    path: str | Path | None, size: int = 64, threshold: int = 127,
+    *, allow_degenerate: bool = False,
+) -> np.ndarray:
+    """Load a binary watermark, preserving alpha-only logos.
 
     Some transparent PNG logos store all visible structure in the alpha channel
     while their RGB channels are uniformly black.  In that case converting
     directly to luminance silently produces an all-zero payload.  This loader
     selects the varying alpha channel only when RGB luminance is essentially
-    flat and alpha is informative, then rejects one-symbol payloads.
+    flat and alpha is informative. Input payloads must have both symbols;
+    decoded outputs may explicitly allow one-symbol recovery failures.
     """
     if path is None:
         binary = make_demo_watermark(size)
@@ -69,7 +73,7 @@ def load_binary_watermark(path: str | Path | None, size: int = 64, threshold: in
         img = gray_source.resize((size, size), Image.Resampling.NEAREST)
         arr = np.asarray(img, dtype=np.uint8)
         binary = np.where(arr >= threshold, 255, 0).astype(np.uint8)
-    if np.unique(binary).size < 2:
+    if not allow_degenerate and np.unique(binary).size < 2:
         raise ValueError(
             "Degenerate watermark payload: the binarized watermark contains only one bit value. "
             "Use a watermark containing both black and white pixels."

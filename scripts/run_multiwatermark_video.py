@@ -8,6 +8,7 @@ from realtime_watermark.core import (
     ber,
     bit_accuracy,
     load_binary_watermark,
+    watermark_statistics,
     nc_binary,
     psnr,
     save_csv,
@@ -121,7 +122,12 @@ def main() -> None:
                         f"expected={expected_hash}, actual={actual_hash}"
                     )
 
-            recovered = load_binary_watermark(recovered_path, size=args.wm_size)
+            # Constant recovered images are valid failure outcomes: do not discard
+            # them or fabricate missing robustness metrics. Input checks stay strict.
+            recovered = load_binary_watermark(
+                recovered_path, size=args.wm_size, allow_degenerate=True
+            )
+            recovered_stats = watermark_statistics(recovered)
             disclosure = NATIVE_DISCLOSURES.get(method_id)
             detector_type = disclosure.detector_type if disclosure is not None else "blind"
             accuracy = float(bit_accuracy(original, recovered))
@@ -142,6 +148,10 @@ def main() -> None:
                     "precodec_mean_psnr": embedding["avg_frame_psnr_before_video_codec"],
                     "bit_accuracy": accuracy,
                     "ber": bit_error,
+                    "recovered_is_constant": bool(
+                        recovered_stats["zero_bits"] == 0 or recovered_stats["one_bits"] == 0
+                    ),
+                    "recovered_one_fraction": recovered_stats["one_fraction"],
                     "empirical_error_probability": bit_error,
                     "nc": float(nc_binary(original, recovered)),
                     "ser_4bit": float(binary_symbol_error_rate(original > 127, recovered > 127, 4)),
