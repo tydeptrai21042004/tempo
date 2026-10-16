@@ -386,7 +386,7 @@ def summarize_stream_run(
     psnrs = [float(r["psnr"]) for r in processed]
     deadlines = [bool(r.get("deadline_missed")) for r in traces if not r.get("queue_dropped")]
     on_time_processed = [r for r in processed if not bool(r.get("deadline_missed", True))]
-    recovery_rows = [r for r in processed if r.get("extraction_path") == "wide_sync_jilp"]
+    recovery_rows = [r for r in processed if r.get("extraction_path") in {"wide_sync_jilp", "local_sync_jilp"}]
     fast_rows = [r for r in processed if r.get("extraction_path") == "raw_fast_jilp"]
     running_ncs: list[float] = []
     for i in range(1, len(recovered_frames) + 1):

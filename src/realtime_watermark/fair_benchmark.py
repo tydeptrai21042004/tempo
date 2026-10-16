@@ -433,7 +433,7 @@ def run_fair_compare(
         non_clean = [r for r in method_attack_rows if r["phase"] != "clean"]
         attack_ncs = np.asarray([r["nc_bipolar"] for r in non_clean], dtype=np.float64)
         attack_bers = np.asarray([r["ber"] for r in non_clean], dtype=np.float64)
-        recovery_rows = [r for r in non_clean if r.get("extraction_path") == "wide_sync_jilp"]
+        recovery_rows = [r for r in non_clean if r.get("extraction_path") in {"wide_sync_jilp", "local_sync_jilp"}]
         fast_rows = [r for r in non_clean if r.get("extraction_path") == "raw_fast_jilp"]
         worst_row = min(non_clean, key=lambda r: r["nc_bipolar"]) if non_clean else {"phase": ""}
         fidelity = fidelity_status(method_id)

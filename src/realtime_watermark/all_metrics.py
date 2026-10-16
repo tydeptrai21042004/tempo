@@ -198,10 +198,17 @@ def run_all_methods_all_metrics(
                     "integer_lattice_initial_parity_failures": int(key.params.get("integer_lattice_initial_parity_failures", 0)),
                     "integer_lattice_initial_guard_failures": int(key.params.get("integer_lattice_initial_guard_failures", 0)),
                     "integer_lattice_payload_blocks": int(key.params.get("integer_lattice_payload_blocks", wm.size)),
+                    "pilot_lattice_unit_updates": int(key.params.get("pilot_lattice_unit_updates", 0)),
+                    "pilot_lattice_corrected_blocks": int(key.params.get("pilot_lattice_corrected_blocks", 0)),
+                    "pilot_lattice_initial_parity_failures": int(key.params.get("pilot_lattice_initial_parity_failures", 0)),
+                    "pilot_lattice_initial_guard_failures": int(key.params.get("pilot_lattice_initial_guard_failures", 0)),
+                    "pilot_lattice_unresolved": int(key.params.get("pilot_lattice_unresolved", 0)),
+                    "pilot_overlap_unresolved": int(key.params.get("pilot_overlap_unresolved", 0)),
                     "extraction_path": extraction_meta.get("path", ""),
                     "sync_candidate": extraction_meta.get("candidate", ""),
                     "pilot_score": extraction_meta.get("score", float("nan")),
                     "pilot_valid": extraction_meta.get("pilot_valid", 0),
+                    "synchronization_confident": bool(extraction_meta.get("synchronization_confident", False)),
                     "estimated_shift_y": extraction_meta.get("shift_y", 0),
                     "estimated_shift_x": extraction_meta.get("shift_x", 0),
                 }
@@ -220,7 +227,7 @@ def run_all_methods_all_metrics(
         ncs = np.asarray([float(r["nc_bipolar"]) for r in non_clean], dtype=np.float64)
         bers = np.asarray([float(r["ber"]) for r in non_clean], dtype=np.float64)
         worst = min(non_clean, key=lambda r: float(r["nc_bipolar"])) if non_clean else {"attack": ""}
-        recovery_rows = [r for r in non_clean if r.get("extraction_path") == "wide_sync_jilp"]
+        recovery_rows = [r for r in non_clean if r.get("extraction_path") in {"wide_sync_jilp", "local_sync_jilp"}]
         fast_rows = [r for r in non_clean if r.get("extraction_path") == "raw_fast_jilp"]
         first = group[0]
         summary_rows.append({

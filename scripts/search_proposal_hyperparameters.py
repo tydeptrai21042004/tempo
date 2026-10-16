@@ -40,6 +40,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--wm-size", type=int, default=64)
     parser.add_argument("--search-hosts", type=int, default=3)
+    parser.add_argument("--external-heldout-dir", default=None, help="test directory recorded but never used during selection")
     parser.add_argument(
         "--attack-preset",
         choices=["smoke", "standard", "extended", "stress"],
@@ -57,15 +58,22 @@ def main() -> None:
 
     host_paths = sorted(path for path in host_dir.glob("*.bmp") if path.is_file())
     watermark_paths = sorted(path for path in watermark_dir.glob("*.png") if path.is_file())
-    if len(host_paths) <= args.search_hosts:
+    if len(host_paths) < args.search_hosts:
         raise RuntimeError(
-            f"Need more than {args.search_hosts} selected hosts; found {len(host_paths)}."
+            f"Need at least {args.search_hosts} development hosts; found {len(host_paths)}."
         )
     if len(watermark_paths) != 2:
         raise RuntimeError(f"Expected exactly two PNG watermarks; found {len(watermark_paths)}.")
 
     search_host_paths = host_paths[: args.search_hosts]
-    heldout_host_paths = host_paths[args.search_hosts :]
+    heldout_host_paths = (sorted(Path(args.external_heldout_dir).glob("*.bmp"))
+                          if args.external_heldout_dir else host_paths[args.search_hosts :])
+    if args.external_heldout_dir:
+        import hashlib
+        dev_hashes={hashlib.sha256(p.read_bytes()).digest() for p in search_host_paths}
+        test_hashes={hashlib.sha256(p.read_bytes()).digest() for p in heldout_host_paths}
+        if not heldout_host_paths or (dev_hashes & test_hashes):
+            raise RuntimeError("External held-out host set is empty or overlaps the development hosts")
     hosts = [load_rgb(path, mode="512") for path in search_host_paths]
     watermarks = [load_binary_watermark(path, size=args.wm_size) for path in watermark_paths]
     attacks = list(default_attacks(args.attack_preset))

@@ -1,0 +1,56 @@
+# Reviewer-focused experimental extension for Sparse QIM-Phase Registration
+
+This is an **experimental patch**, to be overlaid on the original `tempo-main.zip` **after** overlaying `tempo_sparse_qim_phase_changed_files.zip`. It intentionally does not alter the existing orthogonal DCT payload/pilot carriers, QIM encoder, 64-step integer correction, sparse phase registration, or extractor algorithms. It expands independent experimental evidence and makes missing evidence explicit.
+
+## Running
+
+From the `tempo-main` folder with dependencies installed:
+
+```bash
+export PYTHONPATH="$PWD/src:$PWD"
+python scripts/verify_source_manifest.py
+python -m pytest -q
+bash scripts/kaggle_pipeline.sh quick  # smoke test, NOT manuscript evidence
+bash scripts/kaggle_pipeline.sh full   # publication-scale tests; requires substantial CPU time
+```
+
+Kaggle single-cell example (a checked-out repository with these patch files already committed):
+
+```python
+import os, subprocess
+os.environ.update({'OMP_NUM_THREADS':'1','MKL_NUM_THREADS':'1','OPENBLAS_NUM_THREADS':'1'})
+subprocess.run(['bash','scripts/kaggle_pipeline.sh','full'],check=True)
+```
+
+Use `KAGGLE_REPORT_ROOT` and `KAGGLE_MASTER_ZIP` to choose output paths. If no video input is supplied, stream benchmark labels the deterministic synthetic video honestly; set `VIDEO_INPUT` for the framewise benchmark and `--input` to `scripts/live_stream_benchmark.py` for a real input video. The main stream test uses **64x64 = 4096 watermark bits**, not the 16x16 (256-bit) baseline-friendly default.
+
+## Experiment coverage and purpose
+
+| Reviewer question | Executable evidence |
+|---|---|
+| Tuning/test independence | `create_reviewer_holdout.py`: hash-checked development and held-out BMP partitions; hyperparameter search only sees development hosts. |
+| Both watermarks / fixed 4096-bit payload | Primary held-out image benchmark and full-mode wall-clock stream for both PNG watermarks. |
+| Matched distortion | `run_multiwatermark_fair_benchmark.py`: common target PSNR, calibration only on development hosts, two output tables for PSNR-eligible and ineligible observations. No unmatched observation in the eligible summary. |
+| Reproducible experiment configurations | Selected JSON, source manifest, package versions, host hash manifest, exported per-condition CSV, common seed. |
+| Integer-domain reliability/orthogonality | `reviewer_experiments.py`: pilot coordinate changes after uint8 embedding, payload parity/guard failures, pilot closure counts; explicit distinction from theoretical continuous decoupling. |
+| Geometric limits | Added off-grid angle, translations, fractional shift, shear, scale, crops already in original core preset; both directly aligned and fully synchronized NC. |
+| Attack strength | Gaussian/speckle noise variances (defined on normalized [0,1] RGB), JPEG30/JPEG40, intentional targeted payload and pilot coordinate attenuation. |
+| Wrong-key and FPR/ROC | `reviewer_detection_protocol.py`: development-calibrated threshold; independent host test; unwatermarked and wrong-key negatives; known 4096-bit message verification only. Correlated trials and small null sample limit are explicit. |
+| Temporal voting | `reviewer_temporal_limits.py`: empirical 1/3/5/9/15 frames, JPEG variation and deliberately correlated translations, plus an **iid reference curve** (not a guarantee). |
+| Joint hyperparameter interactions | `reviewer_joint_sensitivity.py`: eight 2-level factorial combinations over payload step/pilot step/pilot count using development hosts only. |
+| Capacity | 256,1024,2304,4096 bits as separate supporting analyses; only 4096 in primary comparison. |
+| Extraction galleries | `reviewer_gallery.py`: real decoded watermark images for clean, JPEG30, 2.5deg, payload/pilot suppression; proposal-only (no simulated competing method). |
+| Paired confidence | `reviewer_statistics.py` estimates host-cluster bootstrap uncertainty and compares methods for matched host/watermark/attack units. |
+| 30 FPS / 720p JPEG70 | Actual real-time pacing, queue, frame traces and p95 latency. Pure kernel latency is not substituted for end-to-end FPS. |
+| All review requests | `reviewer_completeness.py`: explicit pass/fail evidence matrix and separately identified missing externally provided baselines/manuscript tasks. |
+
+## Important limitations / deliberately NOT claimed complete
+
+- New Schur/SVD or dual-tree wavelet video-watermark algorithms, TrustMark, and WAM are not included without their independent source, license, trained weights if needed, and faithfully adapted original 4096-bit message protocol. `import_external_baseline_results.py` provides a strict evidence adapter, **not an implementation**. Never call imported rows an independently reproduced method without verifying provenance.
+- A 4096-bit adaptation of a model whose native capacity is different is not automatically the original published method.
+- No guarantee of affine invariance outside the finite decoder candidate family; no global integer-lattice optimality; no cryptographic authentication from Arnold scrambling.
+- Pilot adversarial tests demonstrate vulnerability **assessment**, not immunity. A wrong-key test or finite-sample ROC cannot certify a very low population FPR.
+- The common-image paper's figures, title, abstract and numeric tables have NOT been rewritten. They must be generated/reconciled against the final full-run CSVs, not copied from earlier manuscripts.
+- A quick smoke run is not evidence that the full 74-condition main attack suite or matched modern baseline studies have been completed.
+
+Run `python scripts/reviewer_completeness.py --results-dir "$KAGGLE_REPORT_ROOT" --mode full --strict` to require all machine-checkable evidence paths. The checker writes the report even when failing. In the main pipeline it is non-strict so a partial result archive can still be packaged for diagnosis.

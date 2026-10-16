@@ -102,8 +102,12 @@ fi
 stage "4. SEARCH AND FREEZE JILP-QIM CONFIGURATION"
 SELECTED_CONFIG="$REPORT_ROOT/configs/proposal_selected_all_watermarks.json"
 mkdir -p "$(dirname "$SELECTED_CONFIG")"
+"$PYTHON_BIN" scripts/create_reviewer_holdout.py \
+  --host-dir "$HOST_DIR" --out-dir "$REPORT_ROOT/holdout" --development-count "$HP_HOSTS"
+DEV_HOST_DIR="$REPORT_ROOT/holdout/development"
+TEST_HOST_DIR="$REPORT_ROOT/holdout/test"
 "$PYTHON_BIN" scripts/search_proposal_hyperparameters.py \
-  --host-dir "$HOST_DIR" \
+  --host-dir "$DEV_HOST_DIR" \
   --watermark-dir "$WATERMARK_DIR" \
   --base-config configs/proposal_frozen.json \
   --selected-config "$SELECTED_CONFIG" \
@@ -112,6 +116,7 @@ mkdir -p "$(dirname "$SELECTED_CONFIG")"
   --seed "$SEED" \
   --wm-size "$WM_SIZE" \
   --search-hosts "$HP_HOSTS" \
+  --external-heldout-dir "$TEST_HOST_DIR" \
   --attack-preset "$HP_ATTACK_PRESET"
 
 stage "5. RUN PAPER-NATIVE BASELINE TRACKS"
@@ -120,13 +125,13 @@ if [[ "$MODE" == "quick" ]]; then
   NATIVE_ARGS+=(--quick)
 fi
 "$PYTHON_BIN" scripts/run_paper_native_benchmarks.py \
-  --data-dir "$HOST_DIR" \
+  --data-dir "$TEST_HOST_DIR" \
   --out "$REPORT_ROOT/paper_native" \
   "${NATIVE_ARGS[@]}"
 
 stage "6. RUN ALL IMAGE METHODS ON BOTH WATERMARKS"
 METRIC_ARGS=(
-  --host-dir "$HOST_DIR"
+  --host-dir "$TEST_HOST_DIR"
   --watermark-dir "$WATERMARK_DIR"
   --proposal-config "$SELECTED_CONFIG"
   --out-dir "$REPORT_ROOT/all_methods_all_metrics"
@@ -141,7 +146,7 @@ fi
 
 stage "7. RUN IMAGE AND VIDEO ABLATIONS FOR BOTH WATERMARKS"
 ABLATION_ARGS=(
-  --host-dir "$HOST_DIR"
+  --host-dir "$TEST_HOST_DIR"
   --watermark-dir "$WATERMARK_DIR"
   --config "$SELECTED_CONFIG"
   --out-dir "$REPORT_ROOT/ablation"
@@ -175,8 +180,91 @@ if [[ -n "$VIDEO_INPUT" ]]; then
 fi
 "$PYTHON_BIN" scripts/run_multiwatermark_video.py "${VIDEO_ARGS[@]}"
 
-stage "9. RUN DEADLINE-CONSTRAINED LIVE-STREAM BENCHMARK"
-"$PYTHON_BIN" scripts/live_stream_benchmark.py   --watermark "$WATERMARK_DIR/wm.png"   --proposal-config "$SELECTED_CONFIG"   --workdir "$REPORT_ROOT/live_stream"   --wm-size 16   --frames "$STREAM_FRAMES"   --resolutions "$STREAM_RESOLUTIONS"   --target-fps 30   --channels clean,jpeg70   --pace-mode virtual   --queue-size 2
+stage "9. RUN DEADLINE-CONSTRAINED LIVE-STREAM BENCHMARK (ACTUAL 4096-BIT PAYLOAD)"
+# A wall-clock benchmark is required for real-time claims. Virtual mode is
+# available as a separate diagnostic, not substituted for measured throughput.
+for WATERMARK_FILE in "$WATERMARK_DIR"/*.png; do
+  WM_LABEL="$(basename "$WATERMARK_FILE" .png | sed 's/[^[:alnum:]_-]/_/g')"
+  "$PYTHON_BIN" scripts/live_stream_benchmark.py \
+    --watermark "$WATERMARK_FILE" \
+    --proposal-config "$SELECTED_CONFIG" --methods proposal \
+    --workdir "$REPORT_ROOT/live_stream/$WM_LABEL" \
+    --wm-size "$WM_SIZE" --frames "$STREAM_FRAMES" \
+    --resolutions "$STREAM_RESOLUTIONS" --target-fps 30 \
+    --channels clean,jpeg70 --pace-mode realtime --queue-size 2
+  if [[ "$MODE" == "quick" ]]; then break; fi
+done
+
+stage "9B. RUN SUPPLEMENTARY REVIEWER EXPERIMENTS ON HELD-OUT HOSTS"
+REVIEWER_EXTRA_ARGS=()
+if [[ "$MODE" == "quick" ]]; then
+  REVIEWER_EXTRA_ARGS+=(--max-hosts 1 --max-watermarks 1)
+fi
+"$PYTHON_BIN" scripts/reviewer_experiments.py \
+  --host-dir "$TEST_HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
+  --config "$SELECTED_CONFIG" --out-dir "$REPORT_ROOT/reviewer_experiments" \
+  --mode "$MODE" --seed "$SEED" "${REVIEWER_EXTRA_ARGS[@]}"
+
+
+stage "9B2. CALIBRATED KNOWN-WATERMARK DETECTION: DEVELOPMENT TO HELD-OUT"
+DETECTION_ARGS=()
+if [[ "$MODE" == "quick" ]]; then
+  DETECTION_ARGS+=(--negative-keys 2)
+else
+  DETECTION_ARGS+=(--negative-keys 8)
+fi
+"$PYTHON_BIN" scripts/reviewer_detection_protocol.py \
+  --development-dir "$DEV_HOST_DIR" --test-dir "$TEST_HOST_DIR" \
+  --watermark-dir "$WATERMARK_DIR" --config "$SELECTED_CONFIG" \
+  --out-dir "$REPORT_ROOT/detection" --seed "$SEED" "${DETECTION_ARGS[@]}"
+
+stage "9B3. JOINT PARAMETER SENSITIVITY ON DEVELOPMENT HOSTS"
+JOINT_ARGS=()
+if [[ "$MODE" == "quick" ]]; then
+  JOINT_ARGS+=(--max-hosts 1 --max-watermarks 1)
+fi
+"$PYTHON_BIN" scripts/reviewer_joint_sensitivity.py \
+  --development-dir "$DEV_HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
+  --config "$SELECTED_CONFIG" --out-dir "$REPORT_ROOT/joint_sensitivity" \
+  --seed "$SEED" "${JOINT_ARGS[@]}"
+
+stage "9B4. EMPIRICAL TEMPORAL VOTING LIMITS"
+TEMPORAL_ARGS=()
+if [[ "$MODE" == "quick" ]]; then
+  TEMPORAL_ARGS+=(--max-watermarks 1 --repetitions 1)
+fi
+"$PYTHON_BIN" scripts/reviewer_temporal_limits.py \
+  --host-dir "$TEST_HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
+  --config "$SELECTED_CONFIG" --out-dir "$REPORT_ROOT/temporal_limits" \
+  --seed "$SEED" "${TEMPORAL_ARGS[@]}"
+
+stage "9B5. EXTRACTED WATERMARK EVIDENCE GALLERIES"
+GALLERY_ARGS=()
+if [[ "$MODE" == "quick" ]]; then
+  GALLERY_ARGS+=(--max-hosts 1 --max-watermarks 1)
+fi
+"$PYTHON_BIN" scripts/reviewer_gallery.py \
+  --host-dir "$TEST_HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
+  --config "$SELECTED_CONFIG" --out-dir "$REPORT_ROOT/galleries" \
+  --seed "$SEED" "${GALLERY_ARGS[@]}"
+
+stage "9C. MATCHED-PSNR BASELINES ON HELD-OUT HOSTS"
+MATCHED_ARGS=()
+if [[ "$MODE" == "quick" ]]; then
+  MATCHED_ARGS+=(--host-limit 1 --watermark-limit 1 --attack-preset smoke --timing-repeats 2 --timing-warmups 1)
+else
+  MATCHED_ARGS+=(--attack-preset stress --timing-repeats 5 --timing-warmups 2)
+fi
+"$PYTHON_BIN" scripts/run_multiwatermark_fair_benchmark.py \
+  --host-dir "$TEST_HOST_DIR" --calibration-host-dir "$DEV_HOST_DIR" \
+  --watermark-dir "$WATERMARK_DIR" --proposal-config "$SELECTED_CONFIG" \
+  --out-dir "$REPORT_ROOT/matched_psnr" --wm-size "$WM_SIZE" \
+  --seed "$SEED" --target-psnr 45 --psnr-tolerance 0.75 "${MATCHED_ARGS[@]}"
+
+stage "9D. HOST-CLUSTERED CONFIDENCE INTERVALS AND PAIRED EFFECTS"
+"$PYTHON_BIN" scripts/reviewer_statistics.py \
+  --input "$REPORT_ROOT/all_methods_all_metrics/all_watermarks_all_methods_all_metrics.csv" \
+  --out-dir "$REPORT_ROOT/statistical_evidence" --seed "$SEED"
 
 stage "10. EXPORT EVIDENCE AND PACKAGE RESULTS"
 "$PYTHON_BIN" scripts/export_method_evidence.py --out-dir "$REPORT_ROOT/method_evidence"
@@ -187,7 +275,7 @@ python=$PYTHON_BIN
 seed=$SEED
 watermark_size=$WM_SIZE
 host_rule=all BMP except names containing lena or lenna
-watermark_rule=exactly both PNG files
+watermark_rule=both PNG watermarks; quick mode is a smoke subset
 hyperparameter_attack_preset=$HP_ATTACK_PRESET
 image_attack_preset=$IMAGE_ATTACK_PRESET
 video_frames=$VIDEO_FRAMES
@@ -195,7 +283,12 @@ video_codec=$VIDEO_CODEC
 stream_frames=$STREAM_FRAMES
 stream_resolutions=$STREAM_RESOLUTIONS
 selected_config=$SELECTED_CONFIG
+development_hosts=$DEV_HOST_DIR
+heldout_test_hosts=$TEST_HOST_DIR
+stream_payload_bits=$((WM_SIZE * WM_SIZE))
+stream_pacing=realtime
 EOF
+"$PYTHON_BIN" scripts/reviewer_completeness.py --results-dir "$REPORT_ROOT" --mode "$MODE"
 "$PYTHON_BIN" scripts/package_results.py \
   --results-dir "$REPORT_ROOT" \
   --output "$REPORT_ROOT/watermark_full_reports.zip" \
@@ -222,4 +315,4 @@ echo "Master ZIP: $MASTER_ZIP"
 echo "Image summary: $REPORT_ROOT/all_methods_all_metrics/summary_by_method_watermark.csv"
 echo "Attack summary: $REPORT_ROOT/all_methods_all_metrics/summary_by_attack.csv"
 echo "Video summary: $REPORT_ROOT/video/all_watermarks_video_summary.csv"
-echo "Stream summary: $REPORT_ROOT/live_stream/ALL_STREAM_realtime_summary.csv"
+echo "Per-watermark stream summaries: $REPORT_ROOT/live_stream/*/ALL_STREAM_realtime_summary.csv"

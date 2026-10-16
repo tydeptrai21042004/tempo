@@ -47,8 +47,13 @@ def _mean(rows: list[dict[str, Any]], field: str) -> float:
 
 
 def _aggregate(
-    pair_summaries: list[dict[str, Any]], attack_rows: list[dict[str, Any]]
+    pair_summaries: list[dict[str, Any]], attack_rows: list[dict[str, Any]], *, primary_only: bool = False
 ) -> list[dict[str, Any]]:
+    if primary_only:
+        # Every included host-watermark observation must independently satisfy
+        # the declared matched-PSNR / clean-decode eligibility test.
+        pair_summaries = [r for r in pair_summaries if r.get("primary_rank_eligible") is True]
+        attack_rows = [r for r in attack_rows if r.get("primary_rank_eligible") is True]
     output: list[dict[str, Any]] = []
     for method_id in sorted({str(row["method_id"]) for row in pair_summaries}):
         pairs = [row for row in pair_summaries if row["method_id"] == method_id]
@@ -57,7 +62,7 @@ def _aggregate(
             if row["method_id"] == method_id and row["phase"] != "clean"
         ]
         ncs = np.asarray([float(row["nc_bipolar"]) for row in attacks], dtype=np.float64)
-        recovery = [row for row in attacks if row.get("extraction_path") == "wide_sync_jilp"]
+        recovery = [row for row in attacks if row.get("extraction_path") in {"wide_sync_jilp", "local_sync_jilp"}]
         fast = [row for row in attacks if row.get("extraction_path") == "raw_fast_jilp"]
         output.append({
             "method_id": method_id,
@@ -200,10 +205,15 @@ def main() -> None:
                 all_timing.append(enriched)
 
     aggregate = _aggregate(all_summaries, all_attacks)
+    eligible_aggregate = _aggregate(all_summaries, all_attacks, primary_only=True)
     save_csv(out / "matched_psnr_by_host_watermark.csv", all_summaries)
     save_csv(out / "matched_psnr_per_attack.csv", all_attacks)
     save_csv(out / "matched_psnr_timing.csv", all_timing)
-    save_csv(out / "matched_psnr_summary_by_method.csv", aggregate)
+    save_csv(out / "matched_psnr_summary_by_method.csv", aggregate)  # all observed results, including ineligible
+    save_csv(out / "matched_psnr_primary_eligible_summary.csv", eligible_aggregate)
+    save_csv(out / "matched_psnr_primary_eligible_pairs.csv", [r for r in all_summaries if r.get("primary_rank_eligible") is True])
+    save_csv(out / "matched_psnr_primary_eligible_attacks.csv", [r for r in all_attacks if r.get("primary_rank_eligible") is True])
+    save_csv(out / "matched_psnr_ineligible_pairs.csv", [r for r in all_summaries if r.get("primary_rank_eligible") is not True])
     save_json(out / "matched_psnr_protocol.json", {
         "protocol": "multi-host multi-watermark held-out matched-PSNR evaluation",
         "target_psnr": float(args.target_psnr),

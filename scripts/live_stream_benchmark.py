@@ -114,6 +114,8 @@ def main() -> None:
         "frames_requested": args.frames,
         "watermark_size": args.wm_size,
         "payload_bits": int(watermark.size),
+        "source_video": str(args.input) if args.input else "deterministic_synthetic_stream",
+        "timing_scope": "wall-clock producer and bounded queue; not a formal worst-case scheduling guarantee",
     })
     print(f"Live-stream benchmark saved to: {out.resolve()}")
 
