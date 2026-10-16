@@ -33,16 +33,54 @@ def check(root:Path,mode='full'):
     pairs=rows(matched)
     record('matched_psnr_eligible',bool(pairs) and all(str(r.get('primary_rank_eligible')).lower()=='true' for r in pairs),
            'No eligible matched-PSNR rows, or ineligible rows leaked to primary table')
+    pair_manifest_path=root/'matched_psnr'/'matched_psnr_strict_paired_manifest.json'
+    pair_manifest=json.loads(pair_manifest_path.read_text()) if pair_manifest_path.is_file() else {}
+    pair_rows=rows(root/'matched_psnr'/'matched_psnr_strict_paired_attacks.csv')
+    record('matched_psnr_same_case_paired',pair_manifest.get('status')=='complete' and bool(pair_rows)
+        and pair_manifest.get('total_paired_attack_rows')==len(pair_rows)
+        and all(r.get('proposal_psnr_eligible')=='True' and r.get('baseline_psnr_eligible')=='True' for r in pair_rows),
+        'Matched PSNR conclusions must use the intersection of eligible host/watermark/attack conditions')
     attacker=root/'reviewer_experiments'/'reviewer_manifest.json'
     if attacker.is_file():
         evidence=json.loads(attacker.read_text())
         ok=evidence.get('expected_attack_rows')==evidence.get('actual_attack_rows') and evidence.get('failed_attack_rows')==0
     else:ok=False
     record('offgrid_and_targeted_attacks',ok,'Supplementary geometric and targeted attack matrix incomplete')
-    record('integer_orthogonality_diagnostics',bool(rows(root/'reviewer_experiments'/'orthogonality_and_integer.csv')),
-           'Pilot leakage / integer diagnostics not recorded')
-    record('capacity_sensitivity',bool(rows(root/'reviewer_experiments'/'capacity_sensitivity.csv')),
-           'Payload capacity experiment absent')
+    orth=rows(root/'reviewer_experiments'/'orthogonality_and_integer.csv')
+    record('integer_orthogonality_diagnostics',bool(orth) and
+        (not full or expected_hosts.issubset({r.get('host') for r in orth})) and
+        (not full or {r.get('watermark') for r in orth}==image_wms) and all(
+        all(field in r and r[field]!='' for field in (
+            'pilot_lattice_unit_updates','pilot_lattice_corrected_blocks',
+            'pilot_lattice_unresolved','pilot_coordinate_difference_final_vs_pilot_stage_mean')) for r in orth),
+           'Integer pilot counters must come from actual integer_pilot_* params, not missing keys defaulted to zero')
+    geo=rows(root/'reviewer_experiments'/'geometry_and_targeted_attacks.csv')
+    record('sync_harm_and_raw_vs_aligned',bool(geo) and all(
+        'sync_harmed_nc' in r and r.get('pilot_score_raw','')!='' and
+        r.get('raw_bit_accuracy','')!='' and r.get('sync_gain_nc','')!=''
+        for r in geo if r.get('status')=='ok'),
+        'Raw-versus-registered interference and failure diagnostics absent')
+    boundary_file=root/'integer_boundaries'/'boundary_manifest.json'
+    boundary=json.loads(boundary_file.read_text()) if boundary_file.is_file() else {}
+    attempts=rows(root/'integer_boundaries'/'embedding_attempts.csv')
+    summary=rows(root/'integer_boundaries'/'rejection_summary.csv')
+    required_intensity={'black_0','white_255'} if not full else {
+        'black_0','white_255','shadow_0to3','highlight_252to255','gray_128','rgb_channel_saturation'}
+    record('integer_rejection_denominators',boundary.get('status')=='complete' and bool(attempts) and
+        len(attempts)==boundary.get('attempts') and bool(summary) and
+        required_intensity.issubset({r.get('scenario') for r in attempts}) and
+        all(r.get('attempted')=='1' and r.get('status') in {'accepted','rejected_by_integer_constraints'}
+            for r in attempts) and (not full or len(boundary.get('watermarks',[]))==2),
+        'Extreme intensity trials, accurate rejection denominators, or both watermarks missing')
+    capacity=rows(root/'reviewer_experiments'/'capacity_sensitivity.csv')
+    cap_groups={(r.get('watermark'),r.get('payload_bits'),r.get('attack')) for r in capacity}
+    required_sizes={'256','1024','2304','4096'}
+    record('capacity_attack_vs_payload',bool(capacity) and required_sizes.issubset({r[1] for r in cap_groups})
+        and (not full or expected_hosts.issubset({r.get('host') for r in capacity}))
+        and (not full or {r.get('watermark') for r in capacity}==image_wms)
+        and {'clean','jpeg40','rotate_2p5'}.issubset({r[2] for r in cap_groups}),
+        'Capacity study must vary payload under JPEG and geometric attacks (not only clean)')
+    record('capacity_sensitivity',bool(capacity),'Payload capacity experiment absent')
     detection=root/'detection'/'detection_manifest.json'
     dm=json.loads(detection.read_text()) if detection.exists() else {}
     record('threshold_calibrated_detection',bool(dm.get('status')=='complete' and dm.get('positive_samples',0)>0 and dm.get('negative_samples',0)>0),
@@ -60,6 +98,19 @@ def check(root:Path,mode='full'):
     streams=list((root/'live_stream').glob('*/ALL_STREAM_run_manifest.json'))
     expected_n=2 if full else 1
     stream_manifest=[json.loads(p.read_text()) for p in streams]
+    stream_summaries=[rows(p.parent/'ALL_STREAM_realtime_summary.csv') for p in streams]
+    required_stream_conditions={('1280x720','clean'),('1280x720','jpeg70')} if full else {('512x512','clean')}
+    record('720p_deadline_stress',len(stream_summaries)>=expected_n and all(
+       required_stream_conditions.issubset({(r.get('resolution'),r.get('channel')) for r in ss})
+       and all(r.get('pace_mode')=='realtime' and r.get('payload_bits')=='4096' and
+               r.get('service_ms_p95','')!='' and r.get('effective_output_fps','')!=''
+               for r in ss) for ss in stream_summaries),
+       'Required 720p JPEG70/clean wall-clock p95/FPS observations missing')
+    ta_path=root/'throughput_audit'/'wallclock_throughput_manifest.json'
+    ta=json.loads(ta_path.read_text()) if ta_path.is_file() else {}
+    record('throughput_formula_reconciled',ta.get('status')=='complete' and ta.get('observations',0)>0 and
+           ta.get('throughput_formula','').startswith('4096 * actual effective output FPS'),
+           'Failed to recompute payload bps from payload bits times observed effective output FPS')
     record('wall_clock_4096',len(stream_manifest)>=expected_n and all(
       m.get('pace_mode')=='realtime' and m.get('payload_bits')==4096 for m in stream_manifest),
       'Need actual 4096-bit wall-clock timing for all two watermarks in full mode')
@@ -76,6 +127,7 @@ def check(root:Path,mode='full'):
       'recent_independent_blind_video_baselines':'Requires faithful recent-method implementations, provenance and matched protocol; no implementation invented',
       'modern_deep_learning_watermark_baselines':'Example-review lesson only; 4096-bit adaptations must be clearly documented and validated',
       'recent_baseline_visual_gallery':'Not claimable until real baseline reconstructions are imported',
+      'independent_real_video_validation':'Real video is optional. Synthetic moving frames do NOT constitute real-video evidence; set VIDEO_INPUT to a verified video',
       'trained_adversarial_generators':'Intentional DCT zeroing included; no unsupported claim that diffusion/generative attacks were run',
       'final_manuscript_abstract_and_table_reconciliation':'Requires manuscript update using final measured CSVs, not code alone',
       'crypto_security_guarantee':'Arnold scrambling is not encryption; ROC and wrong-key tests do not imply cryptographic authenticity',
@@ -85,15 +137,16 @@ def check(root:Path,mode='full'):
     reviewer_map={
       'Original Reviewer 1':{'throughput consistency':'final_manuscript_abstract_and_table_reconciliation',
         'matched distortion':'matched_psnr_eligible','holdout and reproducibility':'data_disjoint',
-        'uncertainty':'host_cluster_ci','paired benchmark':'paired_effects'},
+        'uncertainty':'host_cluster_ci','paired benchmark':'matched_psnr_same_case_paired'},
       'Original Reviewer 2':{'integer decoupling':'integer_orthogonality_diagnostics',
+        'integer rejection extremes':'integer_rejection_denominators',
         'temporal majority limits':'temporal_voting','joint parameter coupling':'joint_parameter_coupling',
-        'strong geometry':'offgrid_and_targeted_attacks','capacity':'capacity_sensitivity',
+        'strong geometry':'offgrid_and_targeted_attacks','capacity':'capacity_attack_vs_payload',
         'adversarial pilot interference':'offgrid_and_targeted_attacks'},
       'Original Reviewer 5':{'off-grid rotation':'offgrid_and_targeted_attacks',
         'targeted DCT suppression':'offgrid_and_targeted_attacks',
         'ROC/FPR':'threshold_calibrated_detection','recent video baselines':'recent_independent_blind_video_baselines',
-        'live 4096-bit FPS':'wall_clock_4096','matched PSNR':'matched_psnr_eligible'},
+        'live 4096-bit FPS':'720p_deadline_stress','matched PSNR':'matched_psnr_same_case_paired'},
       'Example DWT-Hessenberg review':{'independent tuning':'data_disjoint',
         'wrong-key security':'threshold_calibrated_detection','noise severity':'offgrid_and_targeted_attacks',
         'host-level statistics':'host_cluster_ci','extracted image gallery':'visual_extraction_gallery',

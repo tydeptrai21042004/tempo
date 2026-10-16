@@ -1,0 +1,116 @@
+TEMPO: REVIEWER EXPERIMENTS PATCH (EXPERIMENTS ONLY)
+=====================================================
+
+Scope / scientific integrity
+----------------------------
+This patch DOES NOT CHANGE the watermark proposal, mathematical model, embedding,
+extraction, pilot registration, integer-closure implementation, frozen config, or
+original image/watermark files. It changes experimental measurement, reporting,
+statistical pairing, completeness assessment, reproducibility and automated tests.
+The proposal source and config are byte-for-byte identical to tempo-main.zip.
+
+What is added / improved
+------------------------
+1. Pilot integer counters now refer to the actual emitted integer_pilot_* fields.
+   Nonexistent pilot initial-failure and overlap fields are BLANK (not fabricated
+   zeros). Non-proposal baselines' integer-module fields are not applicable (blank).
+2. Reviewer-controlled intensity/quantization stress (`integer_boundaries/`):
+   real held-out hosts, all-zero, all-255, shadow 0..3, highlight 252..255,
+   gray 128 and saturated RGB images. Every attempted 4096-bit embed is counted,
+   including rejected attempts; per-case correction counters, actual acceptance,
+   clean decoding, image PSNR, and descriptive intervals are exported. A rejected
+   attempt has unavailable correction internals, NOT a misleading zero.
+3. Quantitative empirical post-warp carrier behavior (`reviewer_experiments/`):
+   raw versus synchronized NC, synchronization harm/gain, pilot score on the
+   unaligned received frame, and distortion-induced changes in both DCT carriers
+   at fixed pilot/payload schedule locations. These are empirical indicators,
+   NOT a general proof of orthogonality after interpolation.
+4. Capacity under attacks: 256, 1024, 2304 and 4096 payload bits, clean/JPEG40/
+   rotation 2.5 degrees (plus noise in full mode) over ALL held-out hosts for the
+   full protocol. The 4096-bit primary protocol is unchanged.
+5. Matched PSNR: reports only observations for the SAME host, watermark and
+   attack when BOTH method results are eligible. Host-cluster paired bootstrap
+   gives honest confidence intervals when multiple independent hosts remain.
+   If no pair qualifies, a machine-readable 'no_eligible_pairs' is emitted;
+   no comparison is invented. Existing baseline implementations are unchanged.
+6. Deadline/FPS report: actual payload throughput is independently recomputed as
+   4096 x EFFECTIVE output FPS. Synthetic versus supplied real-video sources are
+   labeled. 1280x720 clean and JPEG70 deadline/p95 checks are enforced in full
+   mode. The optional VIDEO_INPUT now reaches the causal live stream benchmark.
+   A slow / deadline-missing result is retained, not converted into a 30 FPS claim.
+7. Temporal voting tests now include 31 frames and cover 3 held-out hosts,
+   both watermarks and 5 repeat sequences in full Kaggle mode. The iid curve is
+   an illustrative comparator, not a real-video error-correction bound.
+8. Completeness checking validates required fields, condition coverage, stress
+   denominators, paired evidence, 720p timing and mathematical throughput.
+   It distinguishes executable evidence from missing third-party/manuscript work.
+   A complete CSV suite is never automatically proof of reviewer acceptance.
+9. New regression tests for experiment safeguards; source SHA-256 list updated.
+
+What it does NOT claim
+----------------------
+- Modern third-party blind-video or deep model baselines are NOT fabricated.
+  Their published implementations and matching 4096-bit protocols are needed.
+- A trained generative/diffusion removal attack is NOT silently substituted by
+  ordinary Gaussian noise or public DCT-coefficient suppression.
+- A synthetic stream is NOT presented as an independently filmed real video.
+- Saturation fixture rejection rates are NOT natural-population failure rates.
+- The continuous minimum-energy proof is NOT extended to integer global optimality.
+- A measured 720p stream missing deadlines is NOT called hard real-time.
+- Manuscript abstract/tables and third-party literature citations require a
+  separate revision using final measured results.
+
+How to apply
+------------
+For the CHANGE-ONLY archive: extract/overwrite its tempo-main/ paths onto your
+unmodified original tempo-main directory. Keep all existing data and core files.
+Alternatively use the FULL-PROJECT archive provided alongside the patch.
+
+Quick source + automated test verification (inside tempo-main):
+    python scripts/verify_source_manifest.py
+    python -m pytest -q
+
+CPU-only Kaggle setup (inside cloned / extracted tempo-main):
+    python -m pip install -r requirements-kaggle.txt
+    bash scripts/kaggle_pipeline.sh quick
+
+Full benchmark: use a fresh run to generate ALL result files (possibly lengthy):
+    bash scripts/kaggle_pipeline.sh full
+
+For actual independent video rather than deterministic moving frames:
+    VIDEO_INPUT=/kaggle/input/YOUR_DATASET/your_video.mp4 \
+      bash scripts/kaggle_pipeline.sh full
+
+The script uses single-thread BLAS defaults. Results are saved to
+/kaggle/working/Quynh-watermark-full-results.zip on Kaggle, with all CSV evidence,
+config, split manifest, environment, logs, and a reviewer_completeness.json ledger.
+
+The pipeline always finishes packaging the evidence even if a valid matched-PSNR
+run has zero eligible pairs. Use FAIL_ON_INCOMPLETE=1 to request a nonzero exit
+status on any *executable* reviewer-evidence gap. The missing external method
+implementations/manuscript edits remain explicitly listed in the ledger either way.
+
+Manual targeted scripts (examples from project root):
+    python scripts/reviewer_integer_boundaries.py \
+      --host-dir /path/to/heldout/test --watermark-dir data/user_dataset/watermark \
+      --config configs/proposal_frozen.json --out-dir /tmp/integer_boundaries
+    python scripts/reviewer_matched_pairs.py \
+      --matched-dir /path/to/matched_psnr --out-dir /path/to/matched_psnr
+    python scripts/reviewer_throughput_audit.py \
+      --stream-dir /path/to/live_stream --out-dir /path/to/throughput_audit \
+      --require-720p
+
+Validation executed while preparing this patch
+----------------------------------------------
+- Full automated test suite: 104 passed.
+- Supplementary reviewer experiment: 1 host x 1 watermark, 9 clean/attack
+  observations; all completed (smoke only).
+- Multi-method image experiment: 1 host x 2 watermarks x 6 methods, 36 rows.
+- Controlled saturation/stress: 10 actual held-out hosts + 6 synthetic intensity
+  scenarios, 2 watermarks, 32 attempts; no unexpected errors in this small run.
+- Real wall-clock streaming audit: tested 512x512 synthetic 4096-bit stream under
+  clean and JPEG70; throughput arithmetic verified. 720p full run NOT performed.
+- Matched-PSNR smoke protocol: 1 held-out host x 1 watermark x 2 methods.
+  The strict protocol honestly returned no jointly eligible cases.
+- Full Kaggle results have NOT been executed for this patch and are NOT
+  included. Final performance/reviewer claims depend on that full run.

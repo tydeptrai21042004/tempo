@@ -173,17 +173,22 @@ def run(args):
             marked,key=embed_proposal(host,wm,seed=args.seed+wm_i*1000003,
                                       method_params=config.to_dict())
             key_params={**key.params, "host_shape":tuple(host.shape), "watermark_shape":tuple(wm.shape)}
-            _,pilot_indices,pilot_bits,_,_,wc=_schedules_from_key(key_params)
+            payload_indices,pilot_indices,pilot_bits,_,_,wc=_schedules_from_key(key_params)
             eta=float(key_params['eta'])
             pilot_before,_=_pilot_score_fast(marked,key_params)
             ortho.append({'host':host_path.name,'watermark':wm_path.name,
                           'payload_length':int(wm.size),'continuous_inner_product':float(np.sum(((dct_basis(8,0,1)-dct_basis(8,1,0))/2)*((dct_basis(8,0,1)+dct_basis(8,1,0))/2))),
                           'pilot_accuracy_uint8':pilot_before,
-                          'pilot_lattice_unit_updates':key_params.get('pilot_lattice_unit_updates',0),
-                          'pilot_lattice_initial_parity_failures':key_params.get('pilot_lattice_initial_parity_failures',0),
-                          'pilot_lattice_unresolved':key_params.get('pilot_lattice_unresolved',0),
+                          'pilot_lattice_unit_updates':key_params['integer_pilot_unit_updates'],
+                          'pilot_lattice_corrected_blocks':key_params['integer_pilot_corrected_blocks'],
+                          'integer_lattice_initial_parity_failures':key_params['integer_lattice_initial_parity_failures'],
+                          'integer_lattice_initial_guard_failures':key_params['integer_lattice_initial_guard_failures'],
+                          'integer_lattice_corrected_blocks':key_params['integer_lattice_corrected_blocks'],
+                          'integer_lattice_payload_blocks':key_params['integer_lattice_payload_blocks'],
+                          'pilot_lattice_initial_parity_failures':key_params.get('integer_pilot_initial_parity_failures',''),
+                          'pilot_lattice_unresolved':key_params['integer_pilot_unresolved'],
                           'payload_lattice_unresolved':key_params.get('integer_lattice_unresolved',0),
-                          'pilot_overlap_unresolved':key_params.get('pilot_overlap_unresolved',0),
+                          'pilot_overlap_unresolved':key_params.get('pilot_overlap_unresolved',''),
                           'psnr':float(psnr(host,marked))})
             # Compare final image to pilot-only stage: includes payload and
             # final pilot integer closure, not a pure continuous cross term.
@@ -197,6 +202,27 @@ def run(args):
             ortho[-1].update({'pilot_coordinate_difference_final_vs_pilot_stage_mean':float(leakage.mean()),
                               'pilot_coordinate_difference_final_vs_pilot_stage_p95':float(np.percentile(leakage,95)),
                               'pilot_coordinate_difference_final_vs_pilot_stage_max':float(leakage.max())})
+            # Geometry changes carrier coordinates even though the aligned floating-point
+            # basis is orthogonal.  Report observed BOTH-carrier coordinate movement on
+            # the SAME scheduled blocks, never label it a proof of causal leakage.
+            pilot_initial_p=projected_coordinates(marked,pilot_indices,eta,'pilot')
+            pilot_initial_s=projected_coordinates(marked,pilot_indices,eta,'payload')
+            payload_initial_p=projected_coordinates(marked,payload_indices,eta,'pilot')
+            payload_initial_s=projected_coordinates(marked,payload_indices,eta,'payload')
+            def geometry_coordinate_diagnostics(received):
+                error={}
+                for group,indices,reference_p,reference_s in (
+                    ('pilot_blocks',pilot_indices,pilot_initial_p,pilot_initial_s),
+                    ('payload_blocks',payload_indices,payload_initial_p,payload_initial_s)):
+                    dp=projected_coordinates(received,indices,eta,'pilot')-reference_p
+                    ds=projected_coordinates(received,indices,eta,'payload')-reference_s
+                    error[group+'_pilot_coordinate_rmse']=float(np.sqrt(np.mean(dp*dp)))
+                    error[group+'_payload_coordinate_rmse']=float(np.sqrt(np.mean(ds*ds)))
+                    error[group+'_cross_carrier_error_correlation']=(
+                        float(np.corrcoef(dp,ds)[0,1])
+                        if dp.size>2 and np.std(dp)>1e-10 and np.std(ds)>1e-10
+                        else float('nan'))
+                return error
             def evaluate(label,received,kind):
                 t=time.perf_counter()
                 decoded,meta=extract_jilp_qim(received,key,return_meta=True)
@@ -211,9 +237,16 @@ def run(args):
                              'embed_psnr':float(psnr(host,marked)),
                              'extract_ms':elapsed,
                              'pilot_score':float(meta.get('score',float('nan'))),
+                             'pilot_score_raw':float(_pilot_score_fast(received,key_params)[0]),
+                             'raw_bit_accuracy':float(bit_accuracy(wm,raw)),
+                             'sync_gain_nc':float(nc_binary(wm,decoded)-nc_binary(wm,raw)),
+                             'sync_harmed_nc':bool(nc_binary(wm,decoded)+1e-12<nc_binary(wm,raw)),
                              'path':meta.get('path',''),
                              'synchronization_confident':meta.get('synchronization_confident',False),
-                             'status':'ok'})
+                             'status':'ok',
+                             **(geometry_coordinate_diagnostics(received)
+                                if label.startswith(('rot_','scale_','shear_','translate_','subpixel_'))
+                                else {})})
             evaluate('clean',marked,'clean')
             for item in attacks(args.mode=='quick'):
                 label,fun=item[0],item[1]
@@ -241,23 +274,55 @@ def run(args):
                                  'trial':f'wrong_key_{j}','positive':False,
                                  'nc':float(nc_binary(wm,dec)),
                                  'bit_accuracy':float(bit_accuracy(wm,dec))})
-        # capacity is a separate supplementary study, not a redefinition of 4,096-bit primary payload
-        if host_paths:
-            host=np.asarray(Image.open(host_paths[0]).convert('RGB'))
+        # Capacity is a supplementary varying-payload study, not the 4096-bit main protocol.
+        # Held-out hosts are never used to select steps or tune the algorithm.
+        capacity_hosts=host_paths if args.mode=='full' else host_paths[:1]
+        for capacity_path in capacity_hosts:
+            host=np.asarray(Image.open(capacity_path).convert('RGB'))
             for size in (16,32,48,64):
                 smaller=load_binary_watermark(wm_path,size=size)
                 start=time.perf_counter()
                 y,k=embed_proposal(host,smaller,seed=args.seed+wm_i*1000003,method_params=config.to_dict())
-                duration=(time.perf_counter()-start)*1000
-                rec=extract_jilp_qim(y,k)
-                capacity.append({'host':host_paths[0].name,'watermark':wm_path.name,
-                                 'payload_bits':size*size,'psnr':float(psnr(host,y)),
-                                 'clean_bit_accuracy':float(bit_accuracy(smaller,rec)),
-                                 'embed_ms':duration})
+                embed_ms=(time.perf_counter()-start)*1000
+                cases=[('clean',y),('jpeg40',jpeg(y,40)),('rotate_2p5',warp(y,angle=2.5))]
+                if args.mode=='full':
+                    cases += [('gaussian_var_0p003',gaussian_variance(y,.003))]
+                for attack_label,received in cases:
+                    start=time.perf_counter()
+                    rec=extract_jilp_qim(received,k)
+                    extract_ms=(time.perf_counter()-start)*1000
+                    capacity.append({'host':capacity_path.name,'watermark':wm_path.name,
+                                     'payload_bits':size*size,'attack':attack_label,
+                                     'psnr':float(psnr(host,y)),
+                                     'nc':float(nc_binary(smaller,rec)),
+                                     'ber':float(1-bit_accuracy(smaller,rec)),
+                                     'embed_ms':embed_ms,'extract_ms':extract_ms,
+                                     'clean_bit_accuracy':float(bit_accuracy(smaller,rec)) if attack_label=='clean' else ''})
     csv_write(output/'geometry_and_targeted_attacks.csv',rows)
+    geometry_groups=defaultdict(list)
+    for rr in rows:
+        if rr.get('status')=='ok' and rr.get('kind')=='attack':
+            geometry_groups[rr['attack']].append(rr)
+    csv_write(output/'synchronization_harm_by_attack.csv',[
+        {'attack':attack,'n_pairs':len(v),
+         'synchronization_harm_count':sum(bool(r['sync_harmed_nc']) for r in v),
+         'synchronization_harm_rate':float(np.mean([r['sync_harmed_nc'] for r in v])),
+         'mean_gain_nc_after_synchronization':float(np.mean([r['sync_gain_nc'] for r in v])),
+         'mean_raw_nc':float(np.mean([r['raw_nc'] for r in v])),
+         'mean_final_nc':float(np.mean([r['nc'] for r in v]))}
+        for attack,v in sorted(geometry_groups.items())])
     csv_write(output/'orthogonality_and_integer.csv',ortho)
     csv_write(output/'claimed_watermark_detection.csv',security)
     csv_write(output/'capacity_sensitivity.csv',capacity)
+    cap_groups=defaultdict(list)
+    for cr in capacity: cap_groups[(cr['watermark'],cr['payload_bits'],cr['attack'])].append(cr)
+    csv_write(output/'capacity_by_payload_attack.csv',[{'watermark':w,'payload_bits':n,'attack':a,
+        'n_hosts':len(v),'mean_nc':float(np.mean([z['nc'] for z in v])),
+        'mean_ber':float(np.mean([z['ber'] for z in v])),
+        'mean_psnr':float(np.mean([z['psnr'] for z in v])),
+        'mean_embed_ms':float(np.mean([z['embed_ms'] for z in v])),
+        'mean_extract_ms':float(np.mean([z['extract_ms'] for z in v]))}
+        for (w,n,a),v in sorted(cap_groups.items())])
     csv_write(output/'host_cluster_ci.csv',aggregate_uncertainty(rows,seed=args.seed,boot=args.bootstrap))
     thresholds=np.linspace(-1,1,201)
     positive=np.asarray([x['nc'] for x in security if x['positive']],float)

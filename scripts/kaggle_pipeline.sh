@@ -57,7 +57,7 @@ else
   VIDEO_WARMUP_FRAMES="${VIDEO_WARMUP_FRAMES:-10}"
   HOST_LIMIT="${HOST_LIMIT:-0}"
   ABLATION_HOST_LIMIT="${ABLATION_HOST_LIMIT:-0}"
-  STREAM_FRAMES="${STREAM_FRAMES:-120}"
+  STREAM_FRAMES="${STREAM_FRAMES:-300}"
   STREAM_RESOLUTIONS="${STREAM_RESOLUTIONS:-512x512,1280x720}"
 fi
 
@@ -185,15 +185,27 @@ stage "9. RUN DEADLINE-CONSTRAINED LIVE-STREAM BENCHMARK (ACTUAL 4096-BIT PAYLOA
 # available as a separate diagnostic, not substituted for measured throughput.
 for WATERMARK_FILE in "$WATERMARK_DIR"/*.png; do
   WM_LABEL="$(basename "$WATERMARK_FILE" .png | sed 's/[^[:alnum:]_-]/_/g')"
+  STREAM_INPUT_ARGS=()
+  if [[ -n "$VIDEO_INPUT" ]]; then
+    STREAM_INPUT_ARGS+=(--input "$VIDEO_INPUT")
+  fi
   "$PYTHON_BIN" scripts/live_stream_benchmark.py \
     --watermark "$WATERMARK_FILE" \
     --proposal-config "$SELECTED_CONFIG" --methods proposal \
     --workdir "$REPORT_ROOT/live_stream/$WM_LABEL" \
     --wm-size "$WM_SIZE" --frames "$STREAM_FRAMES" \
     --resolutions "$STREAM_RESOLUTIONS" --target-fps 30 \
-    --channels clean,jpeg70 --pace-mode realtime --queue-size 2
+    --channels clean,jpeg70 --pace-mode realtime --queue-size 2 \
+    "${STREAM_INPUT_ARGS[@]}"
   if [[ "$MODE" == "quick" ]]; then break; fi
 done
+
+stage "9A. VERIFY WALL-CLOCK THROUGHPUT DENOMINATORS"
+THROUGHPUT_ARGS=()
+if [[ "$MODE" == "full" ]]; then THROUGHPUT_ARGS+=(--require-720p); fi
+"$PYTHON_BIN" scripts/reviewer_throughput_audit.py \
+  --stream-dir "$REPORT_ROOT/live_stream" \
+  --out-dir "$REPORT_ROOT/throughput_audit" "${THROUGHPUT_ARGS[@]}"
 
 stage "9B. RUN SUPPLEMENTARY REVIEWER EXPERIMENTS ON HELD-OUT HOSTS"
 REVIEWER_EXTRA_ARGS=()
@@ -205,6 +217,14 @@ fi
   --config "$SELECTED_CONFIG" --out-dir "$REPORT_ROOT/reviewer_experiments" \
   --mode "$MODE" --seed "$SEED" "${REVIEWER_EXTRA_ARGS[@]}"
 
+
+stage "9B1. INTENSITY BOUNDARY AND EMBEDDING REJECTION TESTS"
+BOUNDARY_ARGS=()
+if [[ "$MODE" == "quick" ]]; then BOUNDARY_ARGS+=(--quick); fi
+"$PYTHON_BIN" scripts/reviewer_integer_boundaries.py \
+  --host-dir "$TEST_HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
+  --config "$SELECTED_CONFIG" --out-dir "$REPORT_ROOT/integer_boundaries" \
+  --seed "$SEED" "${BOUNDARY_ARGS[@]}"
 
 stage "9B2. CALIBRATED KNOWN-WATERMARK DETECTION: DEVELOPMENT TO HELD-OUT"
 DETECTION_ARGS=()
@@ -231,7 +251,9 @@ fi
 stage "9B4. EMPIRICAL TEMPORAL VOTING LIMITS"
 TEMPORAL_ARGS=()
 if [[ "$MODE" == "quick" ]]; then
-  TEMPORAL_ARGS+=(--max-watermarks 1 --repetitions 1)
+  TEMPORAL_ARGS+=(--max-hosts 1 --max-watermarks 1 --repetitions 1)
+else
+  TEMPORAL_ARGS+=(--max-hosts 3 --max-watermarks 2 --repetitions 5)
 fi
 "$PYTHON_BIN" scripts/reviewer_temporal_limits.py \
   --host-dir "$TEST_HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
@@ -261,6 +283,11 @@ fi
   --out-dir "$REPORT_ROOT/matched_psnr" --wm-size "$WM_SIZE" \
   --seed "$SEED" --target-psnr 45 --psnr-tolerance 0.75 "${MATCHED_ARGS[@]}"
 
+stage "9C2. STRICT COMMON-PAIR MATCHED-PSNR EFFECTS"
+"$PYTHON_BIN" scripts/reviewer_matched_pairs.py \
+  --matched-dir "$REPORT_ROOT/matched_psnr" \
+  --out-dir "$REPORT_ROOT/matched_psnr" --seed "$SEED"
+
 stage "9D. HOST-CLUSTERED CONFIDENCE INTERVALS AND PAIRED EFFECTS"
 "$PYTHON_BIN" scripts/reviewer_statistics.py \
   --input "$REPORT_ROOT/all_methods_all_metrics/all_watermarks_all_methods_all_metrics.csv" \
@@ -287,6 +314,7 @@ development_hosts=$DEV_HOST_DIR
 heldout_test_hosts=$TEST_HOST_DIR
 stream_payload_bits=$((WM_SIZE * WM_SIZE))
 stream_pacing=realtime
+stream_input=${VIDEO_INPUT:-deterministic_synthetic_stream}
 EOF
 "$PYTHON_BIN" scripts/reviewer_completeness.py --results-dir "$REPORT_ROOT" --mode "$MODE"
 "$PYTHON_BIN" scripts/package_results.py \
@@ -308,6 +336,12 @@ with ZipFile(destination, "w", compression=ZIP_DEFLATED) as archive:
 print(destination)
 PY
 sha256sum "$MASTER_ZIP" | tee "$REPORT_ROOT/master_zip_sha256.txt"
+
+# Preserve all diagnostic CSVs and the ZIP even when a scientifically honest
+# reviewer ledger reports unmet claims. Opt in to a nonzero exit for CI gates.
+if [[ "${FAIL_ON_INCOMPLETE:-0}" == "1" ]]; then
+  "$PYTHON_BIN" scripts/reviewer_completeness.py --results-dir "$REPORT_ROOT" --mode "$MODE" --strict
+fi
 
 stage "11. COMPLETE"
 echo "Results directory: $REPORT_ROOT"

@@ -25,7 +25,7 @@ def run(a):
     cfg=JILPQIMConfig.load(a.config)
     hosts=sorted(Path(a.host_dir).glob('*.bmp'))[:a.max_hosts]
     wms=sorted(Path(a.watermark_dir).glob('*.png'))[:a.max_watermarks]
-    lengths=(1,3,5,9,15)
+    lengths=(1,3,5,9,15,31)
     rows=[];frame_rows=[]
     for wp in wms:
         wm=load_binary_watermark(wp,size=64)
