@@ -1,0 +1,94 @@
+# Two-part mathematical revision: guarded integer-QIM + sparse QIM-phase synchronization
+
+This patch applies to the *exact* uploaded `tempo-main.zip`. It changes only the
+existing method's integer-domain acceptance and pilot registration (plus their
+tests and source manifest). It does not change the 8x8 DCT carriers, watermark
+size, Arnold scrambling, payload scheduling, temporal voting, comparisons, or
+any manuscript/reviewer experiment protocol.
+
+## 1. Integer-domain acceptance
+
+The existing continuous orthogonal QIM embedding and bounded unit-channel
+correction are retained. The previous eleven-index loop for projecting onto
+a binary guarded QIM set is replaced by a mathematically equivalent closed
+formula: if `q=b+2*floor((v/step-b)/2)`, compare projections onto the two
+adjacent parity-valid intervals around `q*step` and `(q+2)*step`. This removes
+a fixed candidate-search loop from each block. The existing 64-step integer
+correction remains a *feasibility heuristic*, not a global integer optimum.
+
+Post-uint8 *payload parity is a hard acceptance condition*; the 0.08*step
+margin remains a desired robustness guard, whose unresolved count is now
+reported as `integer_lattice_final_guard_failures`. No claim of hard guard
+attainment is made unless its count is zero.
+
+Because payload embedding may disturb integer pilot parity despite exact
+continuous orthogonality, a sparse final pilot closure is applied **only to
+pilot blocks**. A candidate unit-channel update is admitted only if it moves
+the pilot coordinate closer to its guarded region *and preserves the payload
+parity on overlapping blocks*. Unresolved pilot parity is a hard failure;
+statistics appear as `integer_pilot_unit_updates`,
+`integer_pilot_corrected_blocks`, and `integer_pilot_unresolved`.
+
+## 2. Sparse QIM-phase registration
+
+The original pilot-triggered fast path is retained. The previous full-frame
+rotation/crop candidates plus signed hard-bit translation search are replaced
+by one phase-coherence objective for all candidate transforms:
+
+`S(T) = (1/N_s) * sum_l (-1)**pilot_bit_l * cos(pi*v_s,l(T)/Delta_s)`.
+
+The carrier `v_s,l` is sampled at transformed **pilot pixels only**, with
+bilinear interpolation and a precomputed RGB scalar field on the triggered
+recovery path. Rotations are sampled at half-degree steps from -6 to +6,
+plus the original three inverse-crop ratios. Integer translations within the
+configured radius are optimized by a reduced-pilot coarse grid followed by
+full-pilot refinement using the **same** phase score. The output image is
+warped at most once after the best alignment is found; direct aligned
+extraction skips the warp entirely. No ECC, training, extra pilots, or
+original-host side information is introduced.
+
+There is *one* fast-path trigger so clean-image processing remains inexpensive;
+it is not a universal geometric-invariance guarantee. The search is limited
+to the supported candidate grid and interpolation model. `meta['score']`
+remains normalized to [0, 1] for existing statistics; raw signed phase is
+included in `meta['phase_score']` and `meta['raw_phase_score']`. Existing
+`raw_fast_jilp` and `wide_sync_jilp` labels are preserved so benchmark
+aggregation does not require modification.
+
+## Verification
+
+From the repository root after overlaying this changed-files ZIP:
+
+```bash
+python scripts/verify_source_manifest.py
+PYTHONPATH=src pytest -q
+```
+
+Local tests after this patch: 91 passed. On the original supplied 13
+natural RGB hosts and both 64x64 watermarks (26 host-watermark cases),
+exploratory *clean* extraction recovered all payload bits. Against 2.5-degree
+rotation, mean extraction bit accuracy was about 0.9435 over those cases and
+median complete *decoder* time around 6.5 ms (warmed local 4-thread Numba
+CPU). These are smoke-study observations, **not** final held-out experiment
+statistics or end-to-end FPS claims. The full 74-attack and wall-clock video
+suite has not been run as part of this patch.
+
+For three comparable image/attack cases, the original implementation achieved
+2.5-degree-rotation accuracy approximately 0.6997 (Girl), 0.6785 (Lenna),
+and 0.5635 (Baboon), at median decoder times 16.63, 18.03, and 17.68 ms,
+respectively. Sparse phase registration, tested separately under the same
+nominal settings, reached approximately 0.9714, 0.951, and 0.895, with the
+new method's recovered result verified on the complete 26-case smoke test.
+
+## Scientific scope
+
+- The continuous orthogonal minimum-energy proof remains unchanged.
+- The constant-time QIM projection is mathematically equivalent to the
+  original finite search; it is an efficiency improvement, not a new theorem.
+- The integer pilot closure is bounded and may be infeasible on arbitrary
+  saturated blocks; strict hard acceptance avoids silently returning invalid
+  results.
+- Sparse geometric phase matching is a new implementation-specific
+  formulation, not a proof of rotation/scale invariance or of cryptographic
+  authentication. The method's FPS and real-time deadline claims still require
+  full wall-clock stream experiments under the exact manuscript protocol.

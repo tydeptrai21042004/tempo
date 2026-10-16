@@ -29,51 +29,30 @@ PILOT_BB = (-dct_basis(BLOCK_SIZE, 1, 0)).astype(np.float32)
 
 @njit(cache=True, fastmath=True)
 def _project_qim_margin(v: float, step: float, bit: int, rho: float) -> float:
-    """Minimum-distance projection onto the QIM parity region with margin.
+    """Exact closest-point projection onto a binary guarded QIM coset.
 
-    Unlike center-QIM, this moves the carrier only when it is outside the safe
-    decision interval. This is the minimum-distortion projection used by JILP-QIM.
+    Adjacent valid intervals are spaced 2*step apart, so only the two
+    intervals bracketing v can contain a nearest point. No 11-index search.
     """
-    q0 = int(np.rint(v / step))
-    best = v
-    bestd = 1e30
-    for t in range(-5, 6):
-        q = q0 + t
-        if (q & 1) != bit:
-            continue
-        center = q * step
-        lo = center - 0.5 * step + rho
-        hi = center + 0.5 * step - rho
-        if lo > hi:
-            y = center
-        elif v < lo:
-            y = lo
-        elif v > hi:
-            y = hi
-        else:
-            y = v
-        d = abs(y - v)
-        if d < bestd:
-            bestd = d
-            best = y
-    return best
+    low_q = int(bit) + 2 * int(np.floor((v / step - bit) * 0.5))
+    lo = low_q * step - 0.5 * step + rho
+    hi = low_q * step + 0.5 * step - rho
+    y0 = min(max(v, lo), hi)
+    hi_q = low_q + 2
+    lo1 = hi_q * step - 0.5 * step + rho
+    hi1 = hi_q * step + 0.5 * step - rho
+    y1 = min(max(v, lo1), hi1)
+    return y0 if abs(v - y0) <= abs(v - y1) else y1
+
 
 @njit(cache=True, fastmath=True)
 def _project_qim_center(v: float, step: float, bit: int) -> float:
-    """Nearest center of the requested QIM parity coset."""
-    q0 = int(np.rint(v / step))
-    best = 0.0
-    bestd = 1e30
-    for t in range(-5, 6):
-        q = q0 + t
-        if (q & 1) != bit:
-            continue
-        y = q * step
-        d = abs(y - v)
-        if d < bestd:
-            bestd = d
-            best = y
-    return best
+    """Exact closest center of the requested binary QIM coset."""
+    low_q = int(bit) + 2 * int(np.floor((v / step - bit) * 0.5))
+    v0 = low_q * step
+    v1 = (low_q + 2) * step
+    return v0 if abs(v - v0) <= abs(v - v1) else v1
+
 
 @njit(cache=True, fastmath=True)
 def _field_rgb(r: float, g: float, b: float, eta: float) -> float:
@@ -217,6 +196,7 @@ def _embed_one_carrier_jilp(out, indices, bits, ba, bb, step, rho, w_crop, block
     unresolved_per_block = np.zeros(n, dtype=np.int64)
     initial_parity_failures = np.zeros(n, dtype=np.int64)
     initial_guard_failures = np.zeros(n, dtype=np.int64)
+    final_guard_failures = np.zeros(n, dtype=np.int64)
 
     for k in prange(n):
         block_corrections = 0
@@ -327,6 +307,10 @@ def _embed_one_carrier_jilp(out, indices, bits, ba, bb, step, rho, w_crop, block
             qcur = int(np.rint(va / step))
             if (qcur & 1) != int(bits[k]):
                 unresolved_per_block[k] = 1
+        qend = int(np.rint(va / step))
+        end_margin = 0.5 * step - abs(va - qend * step)
+        if end_margin < guard:
+            final_guard_failures[k] = 1
         corrections_per_block[k] = block_corrections
     return (
         int(np.sum(corrections_per_block)),
@@ -334,6 +318,7 @@ def _embed_one_carrier_jilp(out, indices, bits, ba, bb, step, rho, w_crop, block
         int(np.sum(corrections_per_block > 0)),
         int(np.sum(initial_parity_failures)),
         int(np.sum(initial_guard_failures)),
+        int(np.sum(final_guard_failures)),
     )
 
 @njit(cache=True, fastmath=True, parallel=True)
@@ -358,6 +343,7 @@ def _embed_one_carrier_jilp_center(out, indices, bits, ba, bb, step, rho, w_crop
     unresolved_per_block = np.zeros(n, dtype=np.int64)
     initial_parity_failures = np.zeros(n, dtype=np.int64)
     initial_guard_failures = np.zeros(n, dtype=np.int64)
+    final_guard_failures = np.zeros(n, dtype=np.int64)
 
     for k in prange(n):
         block_corrections = 0
@@ -468,6 +454,10 @@ def _embed_one_carrier_jilp_center(out, indices, bits, ba, bb, step, rho, w_crop
             qcur = int(np.rint(va / step))
             if (qcur & 1) != int(bits[k]):
                 unresolved_per_block[k] = 1
+        qend = int(np.rint(va / step))
+        end_margin = 0.5 * step - abs(va - qend * step)
+        if end_margin < guard:
+            final_guard_failures[k] = 1
         corrections_per_block[k] = block_corrections
     return (
         int(np.sum(corrections_per_block)),
@@ -475,6 +465,7 @@ def _embed_one_carrier_jilp_center(out, indices, bits, ba, bb, step, rho, w_crop
         int(np.sum(corrections_per_block > 0)),
         int(np.sum(initial_parity_failures)),
         int(np.sum(initial_guard_failures)),
+        int(np.sum(final_guard_failures)),
     )
 
 @njit(cache=True, fastmath=True)
@@ -618,6 +609,82 @@ def _best_integer_translation_kernel(img, indices, target_bits, ba, bb, step, w_
                 best_sy = sy
                 best_sx = sx
     return best_score, best_sy, best_sx
+
+@njit(cache=True, fastmath=True)
+def _close_pilot_integer_joint(out, pilot_indices, pilot_bits, payload_bit_map,
+                               pilot_basis, payload_basis, pilot_step, payload_step,
+                               w_crop, block_size, eta):
+    """Sparse parity closure on the final uint8 lattice of overlapping pilots.
+
+    The entire payload was already embedded. Unit RGB updates are admitted
+    only when they move the pilot toward its guarded coset *and* leave the
+    payload parity unchanged on overlapping blocks. This is an integer
+    feasibility procedure, NOT a globally minimum-energy integer solver.
+    """
+    bs = block_size
+    bc = w_crop // bs
+    gs = np.array((.299 + eta, .587 - .5*eta, .114 - .5*eta))
+    failed = 0
+    corrected = 0
+    steps = 0
+    for k in range(len(pilot_indices)):
+        idx = int(pilot_indices[k])
+        r0 = (idx // bc)*bs
+        c0 = (idx % bc)*bs
+        vs = 0.0
+        vp = 0.0
+        for i in range(bs):
+            for j in range(bs):
+                f = _field_rgb(out[r0+i,c0+j,0],out[r0+i,c0+j,1],out[r0+i,c0+j,2],eta)
+                vs += f * pilot_basis[i,j]
+                vp += f * payload_basis[i,j]
+        b = int(pilot_bits[k])
+        pb = int(payload_bit_map[idx])
+        if (int(np.rint(vs/pilot_step)) & 1) == b:
+            continue
+        changed = 0
+        for _ in range(64):
+            if (int(np.rint(vs/pilot_step)) & 1) == b:
+                break
+            target = _project_qim_margin(vs, pilot_step, b, 0.08*pilot_step)
+            goal = target - vs
+            best_error = abs(goal)
+            ci, cj, cc, cd = -1, -1, -1, 0
+            best_ds, best_dp = 0.0, 0.0
+            for i in range(bs):
+                for j in range(bs):
+                    for ch in range(3):
+                        ds0 = pilot_basis[i,j]*gs[ch]
+                        dp0 = payload_basis[i,j]*gs[ch]
+                        for dr in (-1,1):
+                            value = int(out[r0+i,c0+j,ch])
+                            if value+dr < 0 or value+dr > 255:
+                                continue
+                            ds = dr*ds0
+                            dp = dr*dp0
+                            # Exactly preserve payload parity, including the
+                            # overlap case where every block carries a bit.
+                            if pb >= 0 and (int(np.rint((vp+dp)/payload_step)) & 1) != pb:
+                                continue
+                            err = abs(goal-ds)
+                            if err+1e-10 < best_error:
+                                best_error = err
+                                ci, cj, cc, cd = i,j,ch,dr
+                                best_ds, best_dp = ds, dp
+            if ci < 0:
+                break
+            rr, col = r0+ci, c0+cj
+            out[rr,col,cc] = np.uint8(int(out[rr,col,cc])+cd)
+            vs += best_ds
+            vp += best_dp
+            steps += 1
+            changed = 1
+        if changed:
+            corrected += 1
+        if (int(np.rint(vs/pilot_step)) & 1) != b:
+            failed += 1
+    return steps, corrected, failed
+
 
 def _crop_shape(shape: tuple[int, int, int] | tuple[int, int], block_size: int = BLOCK_SIZE) -> tuple[int, int]:
     h, w = int(shape[0]), int(shape[1])

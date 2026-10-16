@@ -796,37 +796,28 @@ def _best_integer_translation_subset(img: np.ndarray, key_params: dict[str, Any]
 
 
 def _best_candidate(img: np.ndarray, key_params: dict[str, Any], *, quick_accept: float, translation_radius: int, translation_subset: int):
-    img = np.asarray(img, dtype=np.uint8)
-    sc0, valid0 = _pilot_score_fast(img, key_params, 0, 0)
-    if sc0 >= quick_accept:
-        return img, 0, 0, {"path": "raw_fast_jilp", "candidate": "raw", "score": sc0, "pilot_valid": valid0}
+    """One sparse phase objective replaces full-image candidate warping.
 
-    candidates: list[tuple[str, np.ndarray, float, int]] = [("raw", img, sc0, valid0)]
-    for deg in (-5.0, -3.0, -1.0, 1.0, 3.0, 5.0):
-        cimg = _eng._rotate_image(img, deg)
-        s0, v0 = _pilot_score_fast(cimg, key_params, 0, 0)
-        candidates.append((f"rot_inv_{deg:g}", cimg, s0, v0))
-    for frac in (0.10, 0.15, 0.25):
-        cimg = _eng._crop_inverse(img, frac)
-        s0, v0 = _pilot_score_fast(cimg, key_params, 0, 0)
-        candidates.append((f"crop_inv_{frac:.2f}", cimg, s0, v0))
+    The pilot-triggered fast path remains available; the registration search
+    is an optimization over one phase functional, not several score scales.
+    """
+    from .phase_registration import register_sparse_phase
 
-    best_name, best_img, best_score, best_valid = max(candidates, key=lambda x: x[2])
-    best_sy = 0
-    best_sx = 0
-    for base_name, cimg in (("raw", img), (best_name, best_img)):
-        tsc, tsy, tsx, tvalid = _best_integer_translation_subset(
-            cimg, key_params, radius=int(translation_radius), subset=int(translation_subset)
-        )
-        if tsc > best_score:
-            best_name = f"{base_name}_shift_r{translation_radius}"
-            best_img = cimg
-            best_score = tsc
-            best_valid = tvalid
-            best_sy = int(tsy)
-            best_sx = int(tsx)
-    meta = {"path": "wide_sync_jilp", "candidate": best_name, "score": best_score, "pilot_valid": best_valid, "shift_y": best_sy, "shift_x": best_sx}
-    return best_img, best_sy, best_sx, meta
+    _payload, pidx, pbits, _cap, _hc, _wc = _schedules_from_key(key_params)
+    valid = pidx < ((img.shape[0] // BLOCK_SIZE) * (img.shape[1] // BLOCK_SIZE))
+    pidx = pidx[valid][:max(1, int(translation_subset))]
+    pbits = pbits[valid][:len(pidx)]
+    if not len(pidx):
+        return img, 0, 0, {"path": "raw_fast_jilp", "candidate": "no_pilots", "score": 0.0,
+                             "pilot_valid": 0, "registration": "sparse_qim_phase"}
+    aligned, meta = register_sparse_phase(
+        img, pidx, pbits, float(key_params.get("step_pilot", key_params.get("step", DEFAULT_REFERENCE_STEP))),
+        float(key_params.get("eta", 0.07)), quick_accept=quick_accept,
+        translation_radius=translation_radius,
+    )
+    # Translation is incorporated in the single rendered warp; do not apply it
+    # a second time during payload decoding.
+    return aligned, 0, 0, meta
 
 
 def embed_jilp_qim(
@@ -944,7 +935,7 @@ def embed_jilp_qim(
         )
         (
             integer_updates, unresolved, corrected_blocks,
-            initial_parity_failures, initial_guard_failures,
+            initial_parity_failures, initial_guard_failures, final_guard_failures,
         ) = _call_with_realtime_thread_budget(
             kernel,
             out, payload_indices_exec, bits_exec, PAY10_BA, PAY10_BB, step1,
@@ -961,7 +952,7 @@ def embed_jilp_qim(
             step1 * float(rho_frac), int(w_crop), BLOCK_SIZE, effective_eta
         )
         integer_updates, unresolved = 0, 0
-        corrected_blocks, initial_parity_failures, initial_guard_failures = 0, 0, 0
+        corrected_blocks, initial_parity_failures, initial_guard_failures, final_guard_failures = 0, 0, 0, 0
     if bool(params.get("dual_payload_carrier", False)):
         raise ValueError("The repair-free JILP method uses one payload carrier; dual carrier is ablation-only and disabled.")
     # No finished-image extraction or post-hoc repair is performed.
@@ -973,11 +964,32 @@ def embed_jilp_qim(
     params["integer_lattice_initial_parity_failures"] = int(initial_parity_failures)
     params["integer_lattice_initial_guard_failures"] = int(initial_guard_failures)
     params["integer_lattice_payload_blocks"] = int(len(payload_indices_exec))
+    params["integer_lattice_final_guard_failures"] = int(final_guard_failures)
     if bool(use_integer_lattice_closure) and int(unresolved) != 0:
         raise RuntimeError(
             f"JILP embedding is infeasible for {int(unresolved)} payload block(s); "
             "no non-exact watermarked image is returned."
         )
+    if bool(use_integer_lattice_closure) and bool(enable_pilots) and len(pilot_indices):
+        # Only final uint8 pilots are inspected, never a full-image repair pass.
+        # On overlapping blocks, unit corrections must preserve payload parity.
+        payload_lookup = np.full(capacity, -1, dtype=np.int16)
+        payload_lookup[payload_indices] = bits.astype(np.int16)
+        pilot_basis = 0.5 * (_eng.PILOT_BA - _eng.PILOT_BB)
+        payload_basis = 0.5 * (PAY10_BA - PAY10_BB)
+        pilot_updates, pilot_corrected, pilot_unresolved = _eng._close_pilot_integer_joint(
+            out, pilot_indices, pilot_bits, payload_lookup, pilot_basis, payload_basis,
+            float(params["step_pilot"]), step1, int(w_crop), BLOCK_SIZE, effective_eta,
+        )
+        params["integer_pilot_unit_updates"] = int(pilot_updates)
+        params["integer_pilot_corrected_blocks"] = int(pilot_corrected)
+        params["integer_pilot_unresolved"] = int(pilot_unresolved)
+        if int(pilot_unresolved) != 0:
+            raise RuntimeError(f"Pilot parity infeasible in {pilot_unresolved} uint8 block(s)")
+    else:
+        params["integer_pilot_unit_updates"] = 0
+        params["integer_pilot_corrected_blocks"] = 0
+        params["integer_pilot_unresolved"] = 0
     return out, params
 
 
