@@ -30,6 +30,8 @@ class JILPQIMConfig:
     field_mode: str = "opponent"
     temporal_vote_mode: str = "hard"
     scramble_payload: bool = True
+    phase_refinement: str = "off"
+    certified_phase_pruning: bool = False
 
     def validated(self) -> "JILPQIMConfig":
         if self.step <= 0 or self.pilot_step <= 0:
@@ -52,12 +54,21 @@ class JILPQIMConfig:
             raise ValueError("unsupported field_mode")
         if self.temporal_vote_mode not in {"hard", "confidence_weighted"}:
             raise ValueError("unsupported temporal_vote_mode")
+        if self.phase_refinement not in {"off", "selective"}:
+            raise ValueError("phase_refinement must be off or selective")
         if self.use_second_carrier:
             raise ValueError("the released repair-free proposal uses one payload carrier")
         return self
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        # Preserve the original frozen configuration hash and serialized key
+        # when the two opt-in research extensions are disabled.
+        values = asdict(self)
+        if self.phase_refinement == "off":
+            values.pop("phase_refinement")
+        if not self.certified_phase_pruning:
+            values.pop("certified_phase_pruning")
+        return values
 
     def canonical_json(self) -> str:
         return json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False)

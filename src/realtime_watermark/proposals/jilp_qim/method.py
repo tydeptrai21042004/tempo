@@ -173,6 +173,8 @@ def _build_key_params(
     field_mode: str = "opponent",
     temporal_vote_mode: str = "hard",
     scramble_payload: bool = True,
+    phase_refinement: str = "off",
+    certified_phase_pruning: bool = False,
 ) -> dict[str, Any]:
     period = arnold_period(int(watermark_shape[0]))
     primary_frac = 0.85 if bool(use_second_carrier) else 1.0
@@ -234,6 +236,8 @@ def _build_key_params(
         "sync_search_enabled": bool(enable_sync_search),
         "temporal_vote_mode": str(temporal_vote_mode),
         "scramble_payload": bool(scramble_payload),
+        "phase_refinement": str(phase_refinement),
+        "certified_phase_pruning": bool(certified_phase_pruning),
         "structural_components": {
             "integer_lattice_closure": bool(use_integer_lattice_closure),
             "minimum_distortion_region": bool(str(projection_mode) == "minimum_distortion"),
@@ -814,6 +818,8 @@ def _best_candidate(img: np.ndarray, key_params: dict[str, Any], *, quick_accept
         img, pidx, pbits, float(key_params.get("step_pilot", key_params.get("step", DEFAULT_REFERENCE_STEP))),
         float(key_params.get("eta", 0.07)), quick_accept=quick_accept,
         translation_radius=translation_radius,
+        phase_refinement=str(key_params.get("phase_refinement", "off")),
+        certified_pruning=bool(key_params.get("certified_phase_pruning", False)),
     )
     # Translation is incorporated in the single rendered warp; do not apply it
     # a second time during payload decoding.
@@ -844,6 +850,8 @@ def embed_jilp_qim(
     field_mode: str = "opponent",
     temporal_vote_mode: str = "hard",
     scramble_payload: bool = True,
+    phase_refinement: str = "off",
+    certified_phase_pruning: bool = False,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     if not NUMBA_AVAILABLE:
         raise RuntimeError("Numba is required for JILP-QIM real-time kernels. Install numba.")
@@ -870,6 +878,8 @@ def embed_jilp_qim(
         enable_pilots=bool(enable_pilots), enable_sync_search=bool(enable_sync_search),
         payload_schedule_mode=str(payload_schedule_mode), field_mode=str(field_mode),
         temporal_vote_mode=str(temporal_vote_mode), scramble_payload=bool(scramble_payload),
+        phase_refinement=str(phase_refinement),
+        certified_phase_pruning=bool(certified_phase_pruning),
     )
     payload_indices, pilot_indices, pilot_bits, capacity, _h_crop, w_crop, candidate_pool_used = _make_content_adaptive_schedules(
         host, tuple(int(x) for x in wm.shape), seed=int(seed),
@@ -1059,6 +1069,8 @@ def embed_proposal(
         field_mode=config.field_mode,
         temporal_vote_mode=config.temporal_vote_mode,
         scramble_payload=config.scramble_payload,
+        phase_refinement=config.phase_refinement,
+        certified_phase_pruning=config.certified_phase_pruning,
     )
     params["frozen_config"] = config.to_dict()
     params["config_hash_sha256"] = config.sha256()

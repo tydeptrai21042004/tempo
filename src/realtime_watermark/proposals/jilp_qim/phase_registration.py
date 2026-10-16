@@ -40,7 +40,7 @@ def _sample_field_bilinear(field, x: float, y: float) -> float:
 @njit(cache=True, fastmath=True)
 def sparse_phase_score(
     field, indices, pilot_bits, pilot_basis, step, eta,
-    mode, angle_deg, crop_frac, shift_y, shift_x, block_size=8,
+    mode, angle_deg, crop_frac, shift_y, shift_x, block_size=8, score_floor=-2.0,
 ):
     """Compute mean signed QIM phase coherence for a candidate alignment.
 
@@ -89,6 +89,12 @@ def sparse_phase_score(
                 v += pilot_basis[i, j] * f
         # At the required parity coset center: (-1)^bit cos(pi*v/step) = 1.
         acc += (1.0 - 2.0 * float(pilot_bits[k])) * math.cos(math.pi * v / step)
+        # For the unevaluated signed cosine terms, the exact upper bound
+        # is +1 each. Only reject a candidate if even that bound cannot
+        # exceed the score of an existing fully evaluated candidate.
+        if score_floor > -1.0 and (k + 1) % 8 == 0:
+            if (acc + (n - k - 1)) / n < score_floor - 1e-12:
+                return -2.0
     return acc / n
 
 
@@ -149,6 +155,7 @@ def render_registered(img, mode: int, angle: float, crop: float, sy: int, sx: in
 def register_sparse_phase(
     img, indices, bits, step: float, eta: float,
     *, quick_accept: float = 0.72, translation_radius: int = 8,
+    phase_refinement: str = "off", certified_pruning: bool = False,
 ):
     """Finite-grid phase registration, preserving a single pilot fast path.
 
@@ -180,15 +187,30 @@ def register_sparse_phase(
     field = np.ascontiguousarray((g0 * img[:, :, 0].astype(np.float32)
                                 + g1 * img[:, :, 1].astype(np.float32)
                                 + g2 * img[:, :, 2].astype(np.float32)))
-    def score(candidate):
+    def score(candidate, floor=-2.0):
         mode, deg, crop, sy, sx = candidate
         return float(sparse_phase_score(field, indices, bits, basis, float(step), float(eta),
-                                        int(mode), float(deg), float(crop), int(sy), int(sx)))
+                                        int(mode), float(deg), float(crop), int(sy), int(sx),
+                                        score_floor=float(floor)))
     # Sparse angle grid addresses off-grid angles such as 2.5 degrees.
     rotations = [(0, float(a)*0.5, 0.0, 0, 0) for a in range(-12, 13)]
     crops = [(1, 0.0, frac, 0, 0) for frac in (0.10, 0.15, 0.25)]
     candidates = rotations + crops
-    scored = [(score(cand), cand) for cand in candidates]
+    if certified_pruning:
+        # Exact top-three ranking: a skipped candidate has a mathematical
+        # upper bound below the current third-best *fully evaluated* score.
+        # The original geometry-selection rule therefore remains unchanged.
+        leaders = []
+        for cand in candidates:
+            floor = leaders[-1][0] if len(leaders) == 3 else -2.0
+            value = score(cand, floor=floor)
+            if value > -1.5:
+                leaders.append((value, cand))
+                leaders.sort(reverse=True, key=lambda item: item[0])
+                del leaders[3:]
+        scored = leaders
+    else:
+        scored = [(score(cand), cand) for cand in candidates]
     # Keep identity and the two best distinct geometry candidates so a small
     # translation does not spuriously turn into a false angle estimate.
     scored.sort(reverse=True, key=lambda item: item[0])
@@ -232,6 +254,21 @@ def register_sparse_phase(
             sc = score(cand)
             if sc > best[0]:
                 best = (sc, cand)
+    # Bounded continuous local refinement: retains the coarse geometry,
+    # pilot count and phase objective. No additional pixel-domain warp until
+    # the winning transform has been selected.
+    if (phase_refinement == "selective" and best[1][0] == 0
+            and abs(best[1][1]) >= 0.5 and best[1][3] == 0
+            and best[1][4] == 0 and best[0] > 0.30):
+        from scipy.optimize import minimize_scalar
+        anchor = float(best[1][1])
+        opt = minimize_scalar(
+            lambda a: -score((0, float(a), 0.0, 0, 0)),
+            bounds=(anchor - 0.32, anchor + 0.32), method="bounded",
+            options={"maxiter": 10, "xatol": 0.035},
+        )
+        if opt.success and -float(opt.fun) > best[0] + 0.03:
+            best = (-float(opt.fun), (0, float(opt.x), 0.0, 0, 0))
     winner_score, (mode, deg, crop, sy, sx) = best
     # The identity candidate is always eligible, so optimization cannot
     # select a lower phase score than the uncorrected image.
@@ -246,5 +283,7 @@ def register_sparse_phase(
         "raw_phase_score": raw_score, "pilot_valid": int(len(indices)),
         "shift_y": int(sy), "shift_x": int(sx), "rotation": float(deg),
         "crop_fraction": float(crop), "registration": "sparse_qim_phase",
+        "phase_refinement": str(phase_refinement),
+        "certified_pruning": bool(certified_pruning),
         "warp_count": int((mode,deg,crop,sy,sx) != identity),
     }
