@@ -1,0 +1,39 @@
+{
+  "schema": "tempo_video_corpus_v1",
+  "description": "Public video sources for watermarking experiments; URLs are external and may change. Validate downloads and licenses before publication.",
+  "sources": [
+    {
+      "id": "mdn_flower",
+      "url": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+      "attribution": "MDN interactive example, CC0 flower video",
+      "license_note": "CC0, according to public MDN sample listing",
+      "split": "quick",
+      "max_download_mb": 25
+    },
+    {
+      "id": "bbb_motion_360",
+      "url": "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4",
+      "attribution": "Big Buck Bunny, Blender Foundation; hosted by test-videos.co.uk",
+      "license_note": "Big Buck Bunny film is CC BY 3.0; confirm redistribution terms of selected encoded file",
+      "split": "full",
+      "max_download_mb": 12
+    },
+    {
+      "id": "sintel_trailer",
+      "url": "https://media.w3.org/2010/05/sintel/trailer.mp4",
+      "attribution": "Sintel, Blender Foundation; video sample hosted by W3C",
+      "license_note": "Sintel is CC BY 3.0; verify credits/license for public redistribution",
+      "split": "full",
+      "max_download_mb": 25
+    },
+    {
+      "id": "bbb_native_720p",
+      "url": "https://uploads.video-commander.com/sample/BigBuckBunny.mp4",
+      "attribution": "Big Buck Bunny, Blender Foundation; 720p mirror in video-commander public-test-streams",
+      "license_note": "Big Buck Bunny film is CC BY 3.0; cite creator and actual video host",
+      "split": "full",
+      "require_min_height": 720,
+      "max_download_mb": 350
+    }
+  ]
+}

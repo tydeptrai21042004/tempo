@@ -1,0 +1,15 @@
+{
+  "status": "offline_integration_passed",
+  "fixture_origin": "locally_generated_video_only_NOT_a_public_download",
+  "frame_count_per_fixture": 4,
+  "watermarks": "both provided PNG files",
+  "framewise_metrics_rows": 8,
+  "video_method_summary_rows": 2,
+  "stream_condition_rows": 6,
+  "native_720p_smoke_channels": [
+    "clean",
+    "jpeg70"
+  ],
+  "source_algorithm_changed": false,
+  "limitations": "Not independent public-video benchmarking, not sustained FPS or statistical evidence. Network access unavailable in the execution environment; downloads must be verified on Kaggle."
+}

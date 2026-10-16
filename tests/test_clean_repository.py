@@ -21,9 +21,12 @@ OBSOLETE = tuple(
 
 def test_no_document_files_or_generated_result_directories():
     forbidden_suffixes = {".md", ".rst", ".doc", ".docx"}
+    # Source-controlled experiment protocols are intentional, not generated documents.
+    allowed_protocols = {"TEMPO_METHOD_REVISION_README.md", "VIDEO_EVIDENCE_README.md"}
     documents = [
         p for p in ROOT.rglob("*")
         if p.is_file() and p.suffix.lower() in forbidden_suffixes
+        and p.name not in allowed_protocols
         and ".pytest_cache" not in p.parts and ".venv" not in p.parts
     ]
     generated_dirs = [ROOT / name for name in ("reports", "results", "validation")]

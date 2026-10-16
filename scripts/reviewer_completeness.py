@@ -118,6 +118,37 @@ def check(root:Path,mode='full'):
       (p.parent/'ALL_STREAM_realtime_trace.csv').is_file() and
       (p.parent/'ALL_STREAM_realtime_trace.csv').stat().st_size>100 for p in streams),
       'Per-frame trace missing')
+    # Genuine downloaded-video requirement: no synthetic replacement counts as evidence.
+    cp=root/'video_sources'/'corpus.json'
+    corpus=json.loads(cp.read_text()) if cp.is_file() else {}
+    clips=corpus.get('videos',[])
+    real_ok=(corpus.get('status')=='complete' and bool(clips)
+             and all(c.get('status')=='verified' and c.get('is_real_source_video')
+                     and len(c.get('original_sha256',''))==64 and c.get('preparation',{}).get('frames_written',0)>0
+                     for c in clips))
+    if full:real_ok=real_ok and len(clips)>=3 and any(c.get('native_720p') for c in clips)
+    record('downloaded_real_video_corpus',real_ok,
+           'Real downloaded clips with SHA256/valid decoding are required; full mode needs native 720p')
+    evidence=root/'video'/'video_corpus_evidence_manifest.json'
+    vm=json.loads(evidence.read_text()) if evidence.exists() else {}
+    vrows=rows(root/'video'/'all_watermarks_video_summary.csv')
+    frows=rows(root/'video'/'all_clips_per_frame.csv')
+    sr=rows(root/'video'/'video_corpus_stream_summary.csv')
+    allids={c['id'] for c in clips}
+    allpairs={(r.get('video_id'),r.get('watermark_name')) for r in vrows if r.get('method_id')=='proposal'}
+    expected_pairs=allids and {(id_,wm) for id_ in allids for wm in image_wms}
+    record('video_both_watermarks_all_clips',bool(real_ok and vm.get('status')=='complete' and
+           expected_pairs and expected_pairs.issubset(allpairs) and len(frows)>=len(vrows)*2),
+           'Each downloaded video must produce per-frame evidence for both watermark files')
+    stream_pairs={(r.get('video_id'),r.get('watermark_name')) for r in sr}
+    native_ids={c['id'] for c in clips if c.get('native_720p')}
+    have_hd={(r.get('video_id'),r.get('watermark_name')) for r in sr
+             if r.get('resolution')=='1280x720' and r.get('channel')=='jpeg70'}
+    record('real_video_stream_deadlines',bool(sr and expected_pairs and expected_pairs.issubset(stream_pairs)
+           and (not full or {(id_,w) for id_ in native_ids for w in image_wms}.issubset(have_hd))
+           and all(r.get('service_ms_p95','')!='' and r.get('effective_output_fps','')!='' and
+                   r.get('real_video')=='True' for r in sr)),
+           'Real-video 4096-bit wall-clock FPS/p95 missing; must include both watermarks on native HD clip')
     record('video_main',bool(rows(root/'video'/'all_watermarks_video_summary.csv')),
            'Framewise video benchmark absent')
     record('structural_ablation',any((root/'ablation').rglob('*.csv')),
@@ -127,7 +158,6 @@ def check(root:Path,mode='full'):
       'recent_independent_blind_video_baselines':'Requires faithful recent-method implementations, provenance and matched protocol; no implementation invented',
       'modern_deep_learning_watermark_baselines':'Example-review lesson only; 4096-bit adaptations must be clearly documented and validated',
       'recent_baseline_visual_gallery':'Not claimable until real baseline reconstructions are imported',
-      'independent_real_video_validation':'Real video is optional. Synthetic moving frames do NOT constitute real-video evidence; set VIDEO_INPUT to a verified video',
       'trained_adversarial_generators':'Intentional DCT zeroing included; no unsupported claim that diffusion/generative attacks were run',
       'final_manuscript_abstract_and_table_reconciliation':'Requires manuscript update using final measured CSVs, not code alone',
       'crypto_security_guarantee':'Arnold scrambling is not encryption; ROC and wrong-key tests do not imply cryptographic authenticity',
@@ -140,13 +170,13 @@ def check(root:Path,mode='full'):
         'uncertainty':'host_cluster_ci','paired benchmark':'matched_psnr_same_case_paired'},
       'Original Reviewer 2':{'integer decoupling':'integer_orthogonality_diagnostics',
         'integer rejection extremes':'integer_rejection_denominators',
-        'temporal majority limits':'temporal_voting','joint parameter coupling':'joint_parameter_coupling',
+        'real-video temporal evidence':'video_both_watermarks_all_clips','temporal majority limits':'temporal_voting','joint parameter coupling':'joint_parameter_coupling',
         'strong geometry':'offgrid_and_targeted_attacks','capacity':'capacity_attack_vs_payload',
         'adversarial pilot interference':'offgrid_and_targeted_attacks'},
       'Original Reviewer 5':{'off-grid rotation':'offgrid_and_targeted_attacks',
         'targeted DCT suppression':'offgrid_and_targeted_attacks',
         'ROC/FPR':'threshold_calibrated_detection','recent video baselines':'recent_independent_blind_video_baselines',
-        'live 4096-bit FPS':'720p_deadline_stress','matched PSNR':'matched_psnr_same_case_paired'},
+        'live 4096-bit FPS':'real_video_stream_deadlines','matched PSNR':'matched_psnr_same_case_paired'},
       'Example DWT-Hessenberg review':{'independent tuning':'data_disjoint',
         'wrong-key security':'threshold_calibrated_detection','noise severity':'offgrid_and_targeted_attacks',
         'host-level statistics':'host_cluster_ci','extracted image gallery':'visual_extraction_gallery',

@@ -39,6 +39,7 @@ def main() -> None:
     parser.add_argument("--max-frames", type=int, default=300)
     parser.add_argument("--warmup-frames", type=int, default=10)
     parser.add_argument("--codec", default="mp4v")
+    parser.add_argument("--methods", default="all", help="all or comma-separated registered video methods")
     args = parser.parse_args()
 
     watermark_paths = sorted(
@@ -60,13 +61,17 @@ def main() -> None:
         frames=max(args.max_frames, 12),
     )
 
+    methods = list(COMMON_VIDEO_METHODS) if args.methods == "all" else [x.strip() for x in args.methods.split(",") if x.strip()]
+    if not methods or any(x not in COMMON_VIDEO_METHODS for x in methods):
+        raise ValueError(f"Unsupported video method selection: {args.methods}")
+
     rows: list[dict[str, object]] = []
     for watermark_index, watermark_path in enumerate(watermark_paths, start=1):
         watermark_tag = f"watermark_{watermark_index:02d}_{_safe(watermark_path.stem)}"
         watermark_seed = args.seed + 1000003 * (watermark_index - 1)
         original = load_binary_watermark(watermark_path, size=args.wm_size)
 
-        for method_id in COMMON_VIDEO_METHODS:
+        for method_id in methods:
             method_out = out / watermark_tag / method_id
             method_out.mkdir(parents=True, exist_ok=True)
             output_video = method_out / "watermarked.mp4"
@@ -102,6 +107,7 @@ def main() -> None:
                 key_path=key_path,
                 output_watermark_path=recovered_path,
                 report_path=extraction_report,
+                per_frame_report_path=method_out / "per_frame.csv",
                 reference_watermark_path=watermark_path,
                 max_frames=args.max_frames,
                 warmup_frames=args.warmup_frames,
@@ -160,6 +166,7 @@ def main() -> None:
                     "per_frame_bit_accuracy_min": extraction.get("per_frame_bit_accuracy_min"),
                     "per_frame_bit_accuracy_p10": extraction.get("per_frame_bit_accuracy_p10"),
                     "per_frame_nc_mean": extraction.get("per_frame_nc_mean"),
+                    "per_frame_csv": extraction.get("per_frame_report_path"),
                     "per_frame_nc_min": extraction.get("per_frame_nc_min"),
                     "per_frame_nc_p10": extraction.get("per_frame_nc_p10"),
                     "frames_to_vote_nc_090": extraction.get("frames_to_vote_nc_090"),
@@ -177,7 +184,7 @@ def main() -> None:
         {
             "input_video": str(video),
             "watermarks": [str(path) for path in watermark_paths],
-            "methods": list(COMMON_VIDEO_METHODS),
+            "methods": methods,
             "excluded_image_method": "dct_spread_spectrum_cox1997",
             "excluded_reason": (
                 "Cox is informed/non-blind and requires frame-specific original-host coefficients."

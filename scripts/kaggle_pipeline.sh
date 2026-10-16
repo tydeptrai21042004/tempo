@@ -50,6 +50,7 @@ if [[ "$MODE" == "quick" ]]; then
   ABLATION_HOST_LIMIT="${ABLATION_HOST_LIMIT:-1}"
   STREAM_FRAMES="${STREAM_FRAMES:-30}"
   STREAM_RESOLUTIONS="${STREAM_RESOLUTIONS:-512x512}"
+  VIDEO_STREAM_CHANNELS="${VIDEO_STREAM_CHANNELS:-clean,jpeg70,jpeg40}"
 else
   HP_ATTACK_PRESET="${HP_ATTACK_PRESET:-standard}"
   IMAGE_ATTACK_PRESET="${IMAGE_ATTACK_PRESET:-stress}"
@@ -59,6 +60,7 @@ else
   ABLATION_HOST_LIMIT="${ABLATION_HOST_LIMIT:-0}"
   STREAM_FRAMES="${STREAM_FRAMES:-300}"
   STREAM_RESOLUTIONS="${STREAM_RESOLUTIONS:-512x512,1280x720}"
+  VIDEO_STREAM_CHANNELS="${VIDEO_STREAM_CHANNELS:-clean,jpeg90,jpeg70,jpeg40,gaussian5,blur3,drop10}"
 fi
 
 rm -rf "$REPORT_ROOT" "$SELECTED_DATA_DIR" "$MASTER_ZIP"
@@ -119,6 +121,22 @@ TEST_HOST_DIR="$REPORT_ROOT/holdout/test"
   --external-heldout-dir "$TEST_HOST_DIR" \
   --attack-preset "$HP_ATTACK_PRESET"
 
+stage "4A. DOWNLOAD AND VERIFY REAL VIDEO CORPUS (FAIL CLOSED; NO SYNTHETIC FALLBACK)"
+VIDEO_CORPUS_MANIFEST="${VIDEO_CORPUS_MANIFEST:-configs/video_evidence_sources.json}"
+VIDEO_CACHE_DIR="${VIDEO_CACHE_DIR:-$WORK_ROOT/tempo-video-cache}"
+VIDEO_PREPARED_DIR="${VIDEO_PREPARED_DIR:-$WORK_ROOT/tempo-video-prepared}"
+VIDEO_CORPUS_PATH="$REPORT_ROOT/video_sources/corpus.json"
+"$PYTHON_BIN" scripts/video_evidence_corpus.py \
+  --manifest "$VIDEO_CORPUS_MANIFEST" --cache-dir "$VIDEO_CACHE_DIR" \
+  --prepared-dir "$VIDEO_PREPARED_DIR" --out "$VIDEO_CORPUS_PATH" \
+  --mode "$MODE" --frames "$VIDEO_FRAMES"
+FIRST_CORPUS_VIDEO="$($PYTHON_BIN - "$VIDEO_CORPUS_PATH" <<'PYVIDEO'
+import json,sys
+print(json.load(open(sys.argv[1]))['videos'][0]['prepared_path'])
+PYVIDEO
+)"
+VIDEO_ABLATION_INPUT="${VIDEO_INPUT:-$FIRST_CORPUS_VIDEO}"
+
 stage "5. RUN PAPER-NATIVE BASELINE TRACKS"
 NATIVE_ARGS=()
 if [[ "$MODE" == "quick" ]]; then
@@ -159,46 +177,17 @@ ABLATION_ARGS=(
 if [[ "$ABLATION_HOST_LIMIT" -gt 0 ]]; then
   ABLATION_ARGS+=(--max-hosts "$ABLATION_HOST_LIMIT")
 fi
-if [[ -n "$VIDEO_INPUT" ]]; then
-  ABLATION_ARGS+=(--video-input "$VIDEO_INPUT")
-fi
+ABLATION_ARGS+=(--video-input "$VIDEO_ABLATION_INPUT")
 "$PYTHON_BIN" scripts/run_multiwatermark_ablation.py "${ABLATION_ARGS[@]}"
 
-stage "8. RUN FULL VIDEO BENCHMARK FOR BOTH WATERMARKS"
-VIDEO_ARGS=(
-  --watermark-dir "$WATERMARK_DIR"
-  --proposal-config "$SELECTED_CONFIG"
-  --out-dir "$REPORT_ROOT/video"
-  --seed "$SEED"
-  --wm-size "$WM_SIZE"
-  --max-frames "$VIDEO_FRAMES"
-  --warmup-frames "$VIDEO_WARMUP_FRAMES"
-  --codec "$VIDEO_CODEC"
-)
-if [[ -n "$VIDEO_INPUT" ]]; then
-  VIDEO_ARGS+=(--input "$VIDEO_INPUT")
-fi
-"$PYTHON_BIN" scripts/run_multiwatermark_video.py "${VIDEO_ARGS[@]}"
-
-stage "9. RUN DEADLINE-CONSTRAINED LIVE-STREAM BENCHMARK (ACTUAL 4096-BIT PAYLOAD)"
-# A wall-clock benchmark is required for real-time claims. Virtual mode is
-# available as a separate diagnostic, not substituted for measured throughput.
-for WATERMARK_FILE in "$WATERMARK_DIR"/*.png; do
-  WM_LABEL="$(basename "$WATERMARK_FILE" .png | sed 's/[^[:alnum:]_-]/_/g')"
-  STREAM_INPUT_ARGS=()
-  if [[ -n "$VIDEO_INPUT" ]]; then
-    STREAM_INPUT_ARGS+=(--input "$VIDEO_INPUT")
-  fi
-  "$PYTHON_BIN" scripts/live_stream_benchmark.py \
-    --watermark "$WATERMARK_FILE" \
-    --proposal-config "$SELECTED_CONFIG" --methods proposal \
-    --workdir "$REPORT_ROOT/live_stream/$WM_LABEL" \
-    --wm-size "$WM_SIZE" --frames "$STREAM_FRAMES" \
-    --resolutions "$STREAM_RESOLUTIONS" --target-fps 30 \
-    --channels clean,jpeg70 --pace-mode realtime --queue-size 2 \
-    "${STREAM_INPUT_ARGS[@]}"
-  if [[ "$MODE" == "quick" ]]; then break; fi
-done
+stage "8-9. RUN REAL VIDEO CORPUS, BOTH WATERMARKS AND LIVE DEADLINE TESTS"
+"$PYTHON_BIN" scripts/run_video_corpus_suite.py \
+  --corpus "$VIDEO_CORPUS_PATH" --watermark-dir "$WATERMARK_DIR" \
+  --proposal-config "$SELECTED_CONFIG" --video-out "$REPORT_ROOT/video" \
+  --stream-out "$REPORT_ROOT/live_stream" --mode "$MODE" \
+  --max-frames "$VIDEO_FRAMES" --stream-frames "$STREAM_FRAMES" \
+  --codec "$VIDEO_CODEC" --python "$PYTHON_BIN" \
+  --channels "$VIDEO_STREAM_CHANNELS" --resolutions "$STREAM_RESOLUTIONS"
 
 stage "9A. VERIFY WALL-CLOCK THROUGHPUT DENOMINATORS"
 THROUGHPUT_ARGS=()
@@ -309,12 +298,15 @@ video_frames=$VIDEO_FRAMES
 video_codec=$VIDEO_CODEC
 stream_frames=$STREAM_FRAMES
 stream_resolutions=$STREAM_RESOLUTIONS
+stream_channels=$VIDEO_STREAM_CHANNELS
 selected_config=$SELECTED_CONFIG
 development_hosts=$DEV_HOST_DIR
 heldout_test_hosts=$TEST_HOST_DIR
 stream_payload_bits=$((WM_SIZE * WM_SIZE))
 stream_pacing=realtime
-stream_input=${VIDEO_INPUT:-deterministic_synthetic_stream}
+stream_input=verified_public_downloads
+video_corpus_provenance=$VIDEO_CORPUS_PATH
+video_source_manifest=$VIDEO_CORPUS_MANIFEST
 EOF
 "$PYTHON_BIN" scripts/reviewer_completeness.py --results-dir "$REPORT_ROOT" --mode "$MODE"
 "$PYTHON_BIN" scripts/package_results.py \
