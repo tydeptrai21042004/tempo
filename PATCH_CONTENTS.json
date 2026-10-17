@@ -1,0 +1,22 @@
+{
+  "patch_version": "TEMPO Reviewer Experiments v1",
+  "base_archive": "tempo-main(20261017-131415).zip",
+  "scope": "Additive experimental scripts only; core method/configs/baselines untouched",
+  "files": {
+    "REVIEWER_EXPANSION_README.txt": "b0e2df4f94706658d5348364423be2764eb8c3178d3a1860679d4d10df2b0a8c",
+    "scripts/reviewer_expansion_common.py": "f723b109d1aea2b8806f1cb851832fbcfcf0281a00eeb7a1cf1bcad6e182d9c3",
+    "scripts/reviewer_method_paired_study.py": "7b36c29c57b71cbfbca4f07d8840186674c02d1d271bb2b3b4d97746fea70838",
+    "scripts/reviewer_pareto_frontier.py": "a4674831464950f301e86ad4f0f895beabe0b14cf0796710014e52f4edd001e7",
+    "scripts/reviewer_sync_decisions.py": "4c13edcdf1297ea523ba6974779b1911bcc60fe1cd114ce358fe913e8be27c5e",
+    "scripts/reviewer_latency_breakdown.py": "78db81d1678540aebc2e555b2366adbee80822b49477fca1fd3e158502feeeb1",
+    "scripts/reviewer_integer_optimality.py": "8aabb34f949f8614edfa7a036e60f20c45ab8d21a17c18fbdbcd4e4afb450091",
+    "scripts/reviewer_attack_budget.py": "55b0dac62b5150e6a26a355a7184f897ad781383d5d97856d060917267fb722d",
+    "scripts/reviewer_external_dataset.py": "205bc41d25d082d301845c18c6ce0b1aff4b98a0421a2208e4c67a68852ca250",
+    "scripts/reviewer_real_temporal.py": "e19b3130a270f414c4a871a34c8685ff829968319ffd2ab258321cbf118a27a0",
+    "scripts/reviewer_learned_baseline.py": "19eb1dc1dd1c8d438febf40a300fbc6317b0fd982a2429aba46d9ef61872fa51",
+    "scripts/run_reviewer_expansion.py": "2a99dd980e5fe6ed4671192f580534d85065afb968c5c3c8dc8af15529396822",
+    "tests/test_reviewer_expansion.py": "4cc3a4c739c2d3e1da64402c2acf924beff8c5d6a8778ef5e521cd91f576eb1d"
+  },
+  "validation": "135 pytest tests passed; six-stage real-code smoke test passed; external/temporal smoke inputs separately validated",
+  "learned_baseline": "native pretrained results require externally obtained official model/checkpoint; no fabricated inference"
+}
