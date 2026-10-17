@@ -38,6 +38,38 @@ def _sample_field_bilinear(field, x: float, y: float) -> float:
 
 
 @njit(cache=True, fastmath=True)
+def _integer_translation_phase_score(
+    field, indices, pilot_bits, pilot_basis, step, shift_y, shift_x,
+    block_size=8, score_floor=-2.0,
+):
+    """Exact lattice sampling of the same QIM phase score (no interpolation)."""
+    n = len(indices)
+    if n == 0:
+        return -1.0
+    h, w = field.shape
+    bc = (w - w % block_size) // block_size
+    acc = 0.0
+    for k in range(n):
+        idx = int(indices[k])
+        r0 = (idx // bc) * block_size + shift_y
+        c0 = (idx % bc) * block_size + shift_x
+        v = 0.0
+        for i in range(block_size):
+            yy = r0 + i
+            if yy < 0 or yy >= h:
+                continue
+            for j in range(block_size):
+                xx = c0 + j
+                if 0 <= xx < w:
+                    v += float(pilot_basis[i, j]) * float(field[yy, xx])
+        acc += (1.0 - 2.0 * float(pilot_bits[k])) * math.cos(math.pi * v / step)
+        if score_floor > -1.0 and (k + 1) % 8 == 0:
+            if (acc + (n - k - 1)) / n < score_floor - 1e-12:
+                return -2.0
+    return acc / n
+
+
+@njit(cache=True, fastmath=True)
 def sparse_phase_score(
     field, indices, pilot_bits, pilot_basis, step, eta,
     mode, angle_deg, crop_frac, shift_y, shift_x, block_size=8, score_floor=-2.0,
@@ -49,6 +81,11 @@ def sparse_phase_score(
     All pilot bits, including saturated or boundary pilots, contribute to
     the same bounded score in [-1,1].
     """
+    if mode == 0 and angle_deg == 0.0:
+        return _integer_translation_phase_score(
+            field, indices, pilot_bits, pilot_basis, step, shift_y, shift_x,
+            block_size, score_floor,
+        )
     n = len(indices)
     if n == 0:
         return -1.0
@@ -236,12 +273,32 @@ def register_sparse_phase(
     stride = 4 if radius >= 4 else 1
     coarse = sorted(set([-radius, 0, radius] + list(range(-radius, radius + 1, stride))))
     ranked = []
-    for mode, deg, crop, _, _ in geometries:
-        for sy in coarse:
-            for sx in coarse:
-                cand = (mode, deg, crop, sy, sx)
-                ranked.append((coarse_score(cand), cand))
-    ranked.sort(reverse=True, key=lambda item: item[0])
+    if certified_pruning:
+        # Rank only the top three coarse hypotheses. For any unfinished
+        # candidate, each remaining signed-cosine term is bounded by +1,
+        # so pruning cannot remove an entry that would enter the top three.
+        # Retain first-seen ties just as stable Python sorting does.
+        for mode, deg, crop, _, _ in geometries:
+            for sy in coarse:
+                for sx in coarse:
+                    cand = (mode, deg, crop, sy, sx)
+                    floor = ranked[-1][0] if len(ranked) == 3 else -2.0
+                    value = float(sparse_phase_score(
+                        field, short_indices, short_bits, basis, float(step), float(eta),
+                        int(mode), float(deg), float(crop), int(sy), int(sx),
+                        score_floor=float(floor)))
+                    if value < -1.5:
+                        continue  # certified incapable of reaching the top three
+                    ranked.append((value, cand))
+                    ranked.sort(reverse=True, key=lambda item: item[0])
+                    del ranked[3:]
+    else:
+        for mode, deg, crop, _, _ in geometries:
+            for sy in coarse:
+                for sx in coarse:
+                    cand = (mode, deg, crop, sy, sx)
+                    ranked.append((coarse_score(cand), cand))
+        ranked.sort(reverse=True, key=lambda item: item[0])
     # Verify the top few coarse hypotheses against ALL pilots, so the reduced
     # search subset does not become a separate acceptance rule.
     verified = [(score(cand), cand) for _, cand in ranked[:min(3, len(ranked))]]

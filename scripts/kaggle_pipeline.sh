@@ -40,6 +40,12 @@ WM_SIZE="${WM_SIZE:-64}"
 HP_HOSTS="${HP_HOSTS:-3}"
 VIDEO_CODEC="${VIDEO_CODEC:-mp4v}"
 VIDEO_INPUT="${VIDEO_INPUT:-}"
+# Enable the carefully bounded mathematical TEMPO revision by default.
+# Set TEMPO_MATH_REFINEMENT=0 for a faithful original-method control run.
+TEMPO_MATH_REFINEMENT="${TEMPO_MATH_REFINEMENT:-1}"
+if [[ "$TEMPO_MATH_REFINEMENT" != "0" && "$TEMPO_MATH_REFINEMENT" != "1" ]]; then
+  echo "TEMPO_MATH_REFINEMENT must be 0 or 1" >&2; exit 2
+fi
 RESUME_FROM_VIDEO="${KAGGLE_RESUME_FROM_VIDEO:-0}"
 
 if [[ "$MODE" == "quick" ]]; then
@@ -143,6 +149,17 @@ TEST_HOST_DIR="$REPORT_ROOT/holdout/test"
   --search-hosts "$HP_HOSTS" \
   --external-heldout-dir "$TEST_HOST_DIR" \
   --attack-preset "$HP_ATTACK_PRESET"
+
+# Keep the development-selected control configuration and its search log.
+# Only the proposed method's active config is changed; baseline algorithms
+# and all subsequent held-out image/video test protocols are unmodified.
+if [[ "$TEMPO_MATH_REFINEMENT" == "1" ]]; then
+  stage "4B. ACTIVATE MINIMUM-DISTORTION QIM + CERTIFIED SPARSE PHASE SEARCH"
+  "$PYTHON_BIN" scripts/apply_math_refinement.py \
+    --selected-config "$SELECTED_CONFIG" \
+    --original-copy "$REPORT_ROOT/configs/proposal_original_selected.json" \
+    --audit "$REPORT_ROOT/configs/math_refinement_audit.json"
+fi
 
 stage "4A. DOWNLOAD AND VERIFY REAL VIDEO CORPUS (FAIL CLOSED; NO SYNTHETIC FALLBACK)"
 VIDEO_CORPUS_MANIFEST="${VIDEO_CORPUS_MANIFEST:-configs/video_evidence_sources.json}"

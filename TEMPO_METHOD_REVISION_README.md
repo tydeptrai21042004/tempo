@@ -53,7 +53,7 @@ python scripts/method_revision_720p_timing.py --repeats 20 --output results/meth
 
 The longer stress / full real-video pipeline was **not completed** in this sandbox. The full unit suite was attempted but ran beyond its time budget during existing high-cost paper-native/Kaggle-support tests; the focused new + existing revision tests passed (8/8). Do not report the complete reviewer matrix as passed.
 
-To use the **new candidate** as an embedding configuration in your own run, load `configs/proposal_revision_candidate.json` and pass its `parameters` to the existing `embed('proposal', ..., method_params=...)`. The original `scripts/kaggle_pipeline.sh` still starts from the original `configs/proposal_frozen.json` and performs a parameter search; it has **not** been silently switched to the experimental candidate.
+To use the **new candidate** as an embedding configuration in your own run, load `configs/proposal_revision_candidate.json` and pass its `parameters` to the existing `embed('proposal', ..., method_params=...)`. The independent step-17 rotation candidate remains opt-in via `configs/proposal_revision_candidate.json`. The October 17 minimal mathematical refinement described below is a different change. The Kaggle pipeline searches the original configuration, then explicitly saves its control and applies only the guard and certified phase scoring to the actively evaluated proposal.
 
 ## Reviewer status requiring additional work
 
@@ -67,3 +67,68 @@ To use the **new candidate** as an embedding configuration in your own run, load
 ## Novelty boundary
 
 QIM, multidimensional QIM, local geometric optimization and phase-score upper bounds are established mathematical ingredients. **Novelty has not been independently verified** by a complete prior-art search. The strongest potential contribution for a revised manuscript is the specific orthogonal QIM pilot system with a rigorous quantization margin bound and distortion-aware bounded phase refinement under a real-time budget. Avoid presenting generic scalar optimization or parameter tuning as a new mathematical theory.
+
+
+## October 17: minimal mathematical TEMPO refinement (GitHub patch)
+
+This optional paper-method refinement does **not** change 8×8 DCT coefficients,
+carrier orthogonality, 4096-bit payload, RGB minimum-norm formula, integer
+closure, baseline implementations, attack sets, or video frame processing.
+It retains every development-selected numerical parameter except:
+
+- `projection_mode="minimum_distortion"`, `rho_frac=0.45`: nearest safe QIM
+  interval instead of parity-cell center; an established mathematical idea,
+  not an independently novel quantizer.
+- `certified_phase_pruning=True`, `phase_refinement="off"`: signed-cosine
+  upper bounds avoid evaluating candidates that cannot improve the finite-grid
+  top-three list. Pure integer translations sample the original pixel lattice
+  directly; this is equivalent to bilinear sampling at integer coordinates up
+  to floating-point summation roundoff. The final geometric winner is rendered
+  by the original routine. Do not claim full-image geometric invariance.
+
+On a local CPU-only test of three images (`baboon`, `pepper`, `lenna`) and the
+same two 64×64 watermarks, compared with the actual recent Kaggle-style
+center-QIM control, mean clean-image PSNR increased **44.13 → 44.78 dB**;
+clean bit accuracy remained 1.0000; JPEG70 NC **0.9964 → 0.9945** and
+JPEG40 NC **0.9916 → 0.9899**. These are development tests, not the full
+held-out 74-attack result. Kernel/decoder microbenchmark latency was mixed
+across clean, shifted, rotated and noisy cases: no proven aggregate FPS gain,
+30-FPS deadline improvement, or reviewer-ready superiority claim yet.
+
+The Kaggle full pipeline uses this minimal refinement **by default**. Its
+configuration audit appears under `configs/math_refinement_audit.json` in
+`KAGGLE_REPORT_ROOT`. The original development-selected proposal is saved in
+`configs/proposal_original_selected.json` alongside the active refined one.
+The parameter-search report still describes the *pre-refinement* selection;
+use the audit to distinguish the two. Baselines and paper-native reference
+tracks remain unchanged.
+
+Use the original selected method instead with:
+
+```bash
+export TEMPO_MATH_REFINEMENT=0
+bash scripts/kaggle_auto_video.sh full
+```
+
+Use the refinement (default):
+
+```bash
+export TEMPO_MATH_REFINEMENT=1
+bash scripts/kaggle_auto_video.sh full
+```
+
+For a fair A/B benchmark, run each mode in an isolated work directory with
+fresh output paths and the same GitHub commit, hosts, seeds, media, codec and
+Kaggle machine. Do not change modes while resuming previously generated
+results; otherwise the audit will mix incompatible configurations.
+
+Targeted regression checks:
+
+```bash
+PYTHONPATH=src:. python -m pytest -q tests/test_math_refinement.py tests/test_certified_phase_revision.py
+python scripts/verify_source_manifest.py --allow-missing
+```
+
+The local full unit-test suite passed **129 tests** on the patched source.
+The complete new Kaggle full-image plus video benchmark has **not** been run
+for this revision and performance claims must remain preliminary.
