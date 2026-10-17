@@ -2,6 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+
+def _sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with Path(path).open('rb') as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
 from pathlib import Path
 
 from realtime_watermark.core import (
@@ -193,7 +202,9 @@ def main() -> None:
         out / "all_watermarks_video_protocol.json",
         {
             "input_video": str(video),
+            "input_sha256": _sha256_file(video),
             "watermarks": [str(path) for path in watermark_paths],
+            "watermark_sha256": {path.name: _sha256_file(path) for path in watermark_paths},
             "methods": methods,
             "excluded_image_method": "dct_spread_spectrum_cox1997",
             "excluded_reason": (

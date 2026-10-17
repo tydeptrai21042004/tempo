@@ -2,6 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+
+def _sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with Path(path).open('rb') as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
 from pathlib import Path
 import sys
 
@@ -115,6 +124,9 @@ def main() -> None:
         "watermark_size": args.wm_size,
         "payload_bits": int(watermark.size),
         "source_video": str(args.input) if args.input else "deterministic_synthetic_stream",
+        "source_sha256": _sha256_file(Path(args.input)) if args.input else None,
+        "watermark_sha256": _sha256_file(Path(args.watermark)) if args.watermark else None,
+        "proposal_configuration_sha256": proposal.sha256(),
         "timing_scope": "wall-clock producer and bounded queue; not a formal worst-case scheduling guarantee",
     })
     print(f"Live-stream benchmark saved to: {out.resolve()}")

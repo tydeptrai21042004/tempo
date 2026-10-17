@@ -162,7 +162,14 @@ def prepare(*, manifest:Path, cache:Path, prepared:Path, output:Path,
             if not trusted:
                 raw.unlink(missing_ok=True)
                 sidecar.unlink(missing_ok=True)
-                _download(item['url'], raw, int(item.get('max_download_mb',100))*1024*1024, timeout)
+                for attempt in range(3):
+                    try:
+                        _download(item['url'], raw, int(item.get('max_download_mb',100))*1024*1024, timeout)
+                        break
+                    except (OSError, ConnectionError, TimeoutError):
+                        if attempt==2:
+                            raise
+                        time.sleep(2**attempt)
                 sidecar.write_text(json.dumps({'source_url':item['url'],
                     'sha256':sha256(raw),'download_verified_by':'HTTPS transfer',
                     'bytes':raw.stat().st_size},indent=2))
@@ -178,6 +185,8 @@ def prepare(*, manifest:Path, cache:Path, prepared:Path, output:Path,
                 raise ValueError(f'SHA256 mismatch for {name}')
             derived=prepared/f'{name}_512.mp4'
             norm=_normalize(raw,derived,frames=frames)
+            if norm['frames_written'] < min(frames, 2):
+                raise RuntimeError(f'{name} has fewer than two usable frames')
             checked=inspect_video(derived)
             if checked['width']!=512 or checked['height']!=512:
                 raise ValueError('Prepared video does not have required dimensions')
@@ -199,9 +208,11 @@ def prepare(*, manifest:Path, cache:Path, prepared:Path, output:Path,
         'all_real_videos':all(r['is_real_source_video'] for r in records),
         'has_native_720p':any(r['native_720p'] for r in records),
         'manifest_source':str(manifest.resolve()),'videos':records}
-    output.write_text(json.dumps(result,indent=2),encoding='utf8')
     if mode=='full' and not result['has_native_720p']:
+        result['status']='failed'
+        output.write_text(json.dumps(result,indent=2),encoding='utf8')
         raise RuntimeError('Full corpus requires at least one genuinely native 720p clip')
+    output.write_text(json.dumps(result,indent=2),encoding='utf8')
     return result
 
 

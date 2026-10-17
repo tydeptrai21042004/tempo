@@ -4,7 +4,7 @@ Run: PYTHONPATH=src python scripts/method_revision_study.py --split holdout --ou
 The development split was used to choose the trial step; report holdout separately.
 """
 from __future__ import annotations
-import argparse, csv, json, os, time
+import argparse, csv, hashlib, json, os, time
 from pathlib import Path
 import numpy as np
 import cv2
@@ -14,7 +14,6 @@ from realtime_watermark.proposals.jilp_qim.config import DEFAULT_CONFIG
 from realtime_watermark.proposals.jilp_qim.method import extract_jilp_qim
 from realtime_watermark.methods import warmup_numba
 
-DEVELOPMENT = ('lenna.bmp', 'baboon.bmp', 'pepper.bmp', 'sailboat.bmp')
 WATERMARKS = ('wm.png', 'Cc.logo.circle.png')
 ATTACKS = ('clean', 'jpeg70', 'jpeg40', 'rotation1.25', 'rotation2.25',
            'rotation3.25', 'rotation15', 'translate0.5', 'scale1.02', 'shear0.02', 'gaussian5', 'dct_zero')
@@ -62,18 +61,51 @@ def params_for(name):
     return data
 
 
-def run(split, out, max_hosts=0, attacks=ATTACKS):
+def resolved_hosts(split: str, split_manifest: Path) -> list[Path]:
+    """Use the exact official development/test split; never invent an alternate split."""
+    if not split_manifest.is_file():
+        raise FileNotFoundError(
+            f'Official split manifest missing: {split_manifest}. '
+            'Pass --split-manifest from the main experiment. Refusing an unverified holdout.')
+    doc = json.loads(split_manifest.read_text(encoding='utf-8'))
+    groups = ('development', 'test') if split == 'all' else (
+        ('test',) if split == 'holdout' else ('development',))
+    selected = []
+    seen = set()
+    for group in groups:
+        for row in doc[group]:
+            host_path = split_manifest.parent / group / row['name']
+            if not host_path.is_file():
+                raise FileNotFoundError(f'Missing selected split host: {host_path}')
+            digest = hashlib.sha256(host_path.read_bytes()).hexdigest()
+            if digest != row['sha256']:
+                raise RuntimeError(f'Split manifest hash mismatch: {host_path}')
+            if digest in seen:
+                raise RuntimeError(f'Duplicate host across experiment partitions: {host_path}')
+            seen.add(digest)
+            selected.append(host_path)
+    if not selected:
+        raise ValueError('Official split contains no selected hosts')
+    return selected
+
+
+def run(split, out, max_hosts=0, attacks=ATTACKS, split_manifest=None):
     out=Path(out);out.mkdir(parents=True,exist_ok=True)
     cv2.setNumThreads(1)
-    root=Path(__file__).resolve().parents[1]/'data/user_dataset'
-    hosts=sorted(f.name for f in (root/'host').glob('*.bmp'))
-    if split=='development': hosts=[h for h in hosts if h in DEVELOPMENT]
-    elif split=='holdout': hosts=[h for h in hosts if h not in DEVELOPMENT]
+    if split_manifest is None:
+        report_dir=Path(os.environ.get('KAGGLE_REPORT_ROOT', ''))
+        split_manifest=(report_dir/'holdout/split_manifest.json'
+                        if os.environ.get('KAGGLE_REPORT_ROOT') else
+                        Path(__file__).resolve().parents[1]/'results/holdout/split_manifest.json')
+    split_manifest=Path(split_manifest)
+    hosts=resolved_hosts(split,split_manifest)
     if max_hosts: hosts=hosts[:max_hosts]
+    root=Path(__file__).resolve().parents[1]/'data/user_dataset'
     warmup_numba()
     rows=[]
-    for hn in hosts:
-        im=load_rgb(root/'host'/hn,mode='full')
+    for host_path in hosts:
+        hn=host_path.name
+        im=load_rgb(host_path,mode='full')
         for wn in WATERMARKS:
             wm=load_binary_watermark(root/'watermark'/wn,size=64)
             for name in ('baseline','lower_step','candidate'):
@@ -107,15 +139,58 @@ def run(split, out, max_hosts=0, attacks=ATTACKS):
                                 median_embed_ms=float(np.median([r['embed_ms'] for r in sub]))))
     with (out/f'{split}_summary.csv').open('w',newline='') as f:
         writer=csv.DictWriter(f,fieldnames=list(summary[0]));writer.writeheader();writer.writerows(summary)
-    (out/'protocol.json').write_text(json.dumps(dict(split=split,hosts=hosts,watermarks=WATERMARKS,
+    # True within-host/watermark/attack paired differences. This is not a
+    # matched-PSNR experiment: PSNR changes are reported alongside NC changes.
+    by_case={(r['host'],r['watermark'],r['attack'],r['variant']):r for r in rows}
+    paired=[]
+    for anchor in ('baseline','lower_step'):
+        for r in rows:
+            if r['variant']!='candidate':
+                continue
+            base=by_case.get((r['host'],r['watermark'],r['attack'],anchor))
+            if base is None:
+                raise RuntimeError('Missing candidate/anchor paired experimental observation')
+            paired.append(dict(host=r['host'],watermark=r['watermark'],attack=r['attack'],
+                reference=anchor,comparison='candidate',
+                reference_nc=base['nc'],candidate_nc=r['nc'],delta_nc=r['nc']-base['nc'],
+                reference_psnr=base['psnr'],candidate_psnr=r['psnr'],
+                delta_psnr_db=r['psnr']-base['psnr'],
+                reference_embed_ms=base['embed_ms'],candidate_embed_ms=r['embed_ms'],
+                delta_embed_ms=r['embed_ms']-base['embed_ms'],
+                reference_decode_ms=base['decode_ms'],candidate_decode_ms=r['decode_ms'],
+                delta_decode_ms=r['decode_ms']-base['decode_ms']))
+    with (out/f'{split}_paired_effects.csv').open('w',newline='') as f:
+        writer=csv.DictWriter(f,fieldnames=list(paired[0]));writer.writeheader();writer.writerows(paired)
+    # Host-cluster bootstrap, keeping both watermarks and attacks together
+    # within each sampled host. Report descriptive degenerate CIs for n=1.
+    rng=np.random.default_rng(2026)
+    ci=[]
+    for anchor in ('baseline','lower_step'):
+        for attack in attacks:
+            cases=[r for r in paired if r['reference']==anchor and r['attack']==attack]
+            host_ids=sorted({r['host'] for r in cases})
+            for field in ('delta_nc','delta_psnr_db','delta_embed_ms','delta_decode_ms'):
+                host_values=np.array([np.mean([float(r[field]) for r in cases if r['host']==h])
+                                      for h in host_ids],dtype=float)
+                boot=host_values[rng.integers(0,len(host_values),size=(500,len(host_values)))].mean(axis=1)
+                ci.append(dict(reference=anchor,comparison='candidate',attack=attack,metric=field,
+                    host_clusters=len(host_ids),pairs=len(cases),mean=float(host_values.mean()),
+                    ci95_low=float(np.quantile(boot,0.025)),ci95_high=float(np.quantile(boot,0.975)),
+                    inference='descriptive_only_one_host' if len(host_ids)==1 else 'host_cluster_bootstrap'))
+    with (out/f'{split}_paired_host_bootstrap.csv').open('w',newline='') as f:
+        writer=csv.DictWriter(f,fieldnames=list(ci[0]));writer.writeheader();writer.writerows(ci)
+    (out/'protocol.json').write_text(json.dumps(dict(split=split,hosts=[p.name for p in hosts],host_sha256={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in hosts},split_manifest=str(split_manifest.resolve()),watermarks=WATERMARKS,
                   attacks=list(attacks),seed=2026,variants={n:params_for(n) for n in ('baseline','lower_step','candidate')},
+                  paired_effects='same host, watermark and attack; independent PSNR (not PSNR-matched)',
+                  bootstrap='500 draws over independent host clusters, random seed 2026',
                   cpu_threads=os.environ.get('NUMBA_NUM_THREADS'),opencv_threads=1),indent=2))
     return summary
 
 if __name__=='__main__':
     ap=argparse.ArgumentParser();ap.add_argument('--split',choices=['development','holdout','all'],default='holdout')
     ap.add_argument('--out',default='results/method_revision');ap.add_argument('--max-hosts',type=int,default=0)
+    ap.add_argument('--split-manifest',default=None,help='Official holdout/split_manifest.json; defaults to $KAGGLE_REPORT_ROOT/holdout/split_manifest.json')
     ap.add_argument('--quick',action='store_true');args=ap.parse_args()
     arr=('clean','jpeg70','jpeg40','rotation1.25','rotation2.25','rotation3.25','translate0.5','scale1.02') if args.quick else ATTACKS
-    res=run(args.split,args.out,args.max_hosts,arr)
+    res=run(args.split,args.out,args.max_hosts,arr,split_manifest=args.split_manifest)
     for r in res: print(r)

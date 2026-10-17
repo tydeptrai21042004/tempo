@@ -3,11 +3,21 @@
 from __future__ import annotations
 import argparse
 import csv
+import hashlib
+
+def _sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with Path(path).open('rb') as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
 import json
 from pathlib import Path
 import subprocess
 import sys
 from realtime_watermark.registry import COMMON_VIDEO_METHODS
+from realtime_watermark.proposals.jilp_qim.config import JILPQIMConfig
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -37,6 +47,8 @@ def run(corpus_path:Path,watermark_dir:Path,config:Path,video_out:Path,stream_ou
         *,mode:str,max_frames:int,stream_frames:int,codec:str,python_bin:str,
         resolutions:str='512x512,1280x720',target_fps:int=30,
         stream_channels:str='clean,jpeg70,jpeg40',resume:bool=False):
+    if max_frames < 2 or stream_frames < 2:
+        raise ValueError('Both framewise and streaming video runs require at least two frames')
     corpus=json.loads(corpus_path.read_text())
     videos=corpus.get('videos',[])
     if corpus.get('status')!='complete' or not videos:
@@ -55,6 +67,13 @@ def run(corpus_path:Path,watermark_dir:Path,config:Path,video_out:Path,stream_ou
         prepared=Path(clip['prepared_path'])
         if not prepared.is_file():
             raise FileNotFoundError(prepared)
+        prepared_hash=_sha256_file(prepared)
+        if prepared_hash != clip['prepared_sha256']:
+            raise RuntimeError(f'Prepared video changed after verification: {clip["id"]}')
+        src_path=Path(clip['original_path'])
+        if not src_path.is_file() or _sha256_file(src_path)!=clip['original_sha256']:
+            raise RuntimeError(f'Original video changed after corpus verification: {clip["id"]}')
+        watermark_hashes={w.name: _sha256_file(w) for w in watermarks}
         clip_out=video_out/clip['id']
         methods='all' if mode=='full' else 'proposal'
         summary_path=clip_out/'all_watermarks_video_summary.csv'
@@ -68,6 +87,8 @@ def run(corpus_path:Path,watermark_dir:Path,config:Path,video_out:Path,stream_ou
                 from realtime_watermark.proposals.jilp_qim.config import JILPQIMConfig
                 protocol_ok=(protocol.get('proposal_configuration_sha256')==JILPQIMConfig.load(config).sha256()
                     and protocol.get('input_video')==str(prepared)
+                    and protocol.get('input_sha256')==prepared_hash
+                    and protocol.get('watermark_sha256')==watermark_hashes
                     and protocol.get('frames')==max_frames
                     and protocol.get('codec')==codec
                     and set(protocol.get('methods',[]))==expected_methods)
@@ -75,6 +96,7 @@ def run(corpus_path:Path,watermark_dir:Path,config:Path,video_out:Path,stream_ou
                 use_cached_video=(protocol_ok and len(cached)==len(expected_pairs) and actual_pairs==expected_pairs and all(
                     2<=int(x['frame_count'])<=max_frames and
                     Path(x['per_frame_csv']).is_file() and Path(x['recovered_watermark']).is_file() and
+                    Path(x['watermarked_video']).is_file() and Path(x['key_json']).is_file() and
                     len(read_csv(Path(x['per_frame_csv'])))==int(x['frame_count']) for x in cached))
             except (ValueError,KeyError,OSError,RuntimeError):
                 use_cached_video=False
@@ -129,10 +151,14 @@ def run(corpus_path:Path,watermark_dir:Path,config:Path,video_out:Path,stream_ou
                             x.get('effective_output_fps','')!='' for x in cached_rows) and
                         manifest.get('payload_bits')==4096 and manifest.get('pace_mode')=='realtime' and
                         manifest.get('source_video')==str(src_path) and
+                        manifest.get('source_sha256')==clip['original_sha256'] and
+                        manifest.get('watermark_sha256')==watermark_hashes[watermark.name] and
+                        manifest.get('proposal_configuration_sha256')==JILPQIMConfig.load(config).sha256() and
                         manifest.get('frames_requested')==stream_frames and
                         set(manifest.get('channels',[]))==required_channels and
                         set(manifest.get('methods',[]))=={'proposal'} and
-                        bool(read_csv(trace_path)))
+                        expected_stream_conditions.issubset({(r.get('resolution'),r.get('channel'))
+                            for r in read_csv(trace_path)}))
                 except (ValueError,KeyError,OSError,RuntimeError):
                     use_cached_stream=False
             if use_cached_stream:

@@ -24,6 +24,9 @@ def split_hosts(host_dir: Path, output: Path, development_count: int = 3) -> dic
     hashes = {h: sha256(h) for h in hosts}
     if {hashes[h] for h in development} & {hashes[h] for h in test}:
         raise RuntimeError('Duplicate image bytes across development and held-out tests')
+    # Regenerate the split atomically enough to avoid stale host files when N changes.
+    for group in ('development', 'test'):
+        shutil.rmtree(output / group, ignore_errors=True)
     output.mkdir(parents=True, exist_ok=True)
     for group, paths in (('development', development), ('test', test)):
         target = output / group
