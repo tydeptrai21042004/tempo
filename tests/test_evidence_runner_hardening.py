@@ -11,7 +11,31 @@ import numpy as np
 from scripts.method_revision_study import resolved_hosts
 from scripts.create_reviewer_holdout import split_hosts
 from scripts.video_evidence_corpus import prepare
-from tests.test_video_evidence_corpus import local_fixture
+import cv2
+
+
+def local_fixture(tmp_path: Path, *, width=320, height=180, frames=4) -> Path:
+    """Build a small genuine codec-encoded video without importing other tests.
+
+    Kaggle can have a third-party ``tests`` package installed, so ``from
+    tests.test_video_evidence_corpus import ...`` is not portable.
+    """
+    video = tmp_path / 'actual_video.mp4'
+    writer = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*'mp4v'),
+                             15, (width, height))
+    assert writer.isOpened(), 'OpenCV mp4v encoder unavailable'
+    try:
+        for i in range(frames):
+            frame = np.empty((height, width, 3), dtype=np.uint8)
+            frame[:] = (20 + i * 8, 80 + i * 10, 120 + i * 15)
+            cv2.rectangle(frame, (max(0, i * 9), 30),
+                          (min(width - 1, i * 9 + 50), min(height - 1, 95)),
+                          (120, 210, 30), -1)
+            writer.write(frame)
+    finally:
+        writer.release()
+    assert video.is_file() and video.stat().st_size > 1000
+    return video
 
 
 def test_revision_study_fails_closed_without_actual_split(tmp_path):
