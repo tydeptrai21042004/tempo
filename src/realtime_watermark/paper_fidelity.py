@@ -131,6 +131,18 @@ PAPER_FIDELITY: dict[str, dict] = {
         "unresolved_core_stages": [],
         "eligibility_reason": "Paper-supported blind real-time DCT-energy baseline; compressed-domain parsing is not claimed.",
     },
+    "rcme_qim": {
+        "native_status": "research_candidate_not_yet_validated",
+        "common_adapter_status": "research_candidate",
+        "paper_reproduction_eligible": False,
+        "common_primary_eligible": False,
+        "blindness_tier": "blind",
+        "verified_capacity": "one payload bit per selected 8x8 block",
+        "verified": ["unit tests for direct decoding and reliability budget only"],
+        "adapted": ["reuses TEMPO DCT carrier and integer safeguard"],
+        "unresolved_core_stages": ["matched-protocol benchmarking of NC/PSNR/FPS", "JPEG variance assumption"],
+        "eligibility_reason": "Opt-in mathematical research prototype; not an established improved proposal.",
+    },
     "proposal": {
         "native_status": "repository_proposal",
         "common_adapter_status": "repository_proposal",

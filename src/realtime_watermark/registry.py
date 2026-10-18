@@ -15,6 +15,7 @@ from .baselines import (
     dew_langelaar2001,
 )
 from .proposals.jilp_qim import method as proposal_method
+from .proposals import rcme_qim as rcme_method
 from .paper_fidelity import fidelity_status
 
 METHOD_MODULES = {
@@ -25,6 +26,7 @@ METHOD_MODULES = {
     dct_spread_spectrum_cox1997.METHOD_ID: dct_spread_spectrum_cox1997,
     dew_langelaar2001.METHOD_ID: dew_langelaar2001,
     proposal_method.METHOD_ID: proposal_method,
+    rcme_method.METHOD_ID: rcme_method,
 }
 
 METHOD_ALIASES: dict[str, str] = {
@@ -38,6 +40,7 @@ METHOD_ALIASES: dict[str, str] = {
     "dew": dew_langelaar2001.METHOD_ID,
     "differential_energy": dew_langelaar2001.METHOD_ID,
     "jilp_qim": proposal_method.METHOD_ID,
+    "rcme": rcme_method.METHOD_ID,
 }
 
 BASELINE_METHODS = [
@@ -76,10 +79,10 @@ STREAM_BENCHMARK_METHODS = [
     dew_langelaar2001.METHOD_ID,
     PROPOSAL_METHOD,
 ]
-DIAGNOSTIC_METHODS: list[str] = []
+DIAGNOSTIC_METHODS: list[str] = [rcme_method.METHOD_ID]
 IMAGE_BENCHMARK_METHODS = list(COMMON_IMAGE_METHODS)
 ALL_METHODS = [*BASELINE_METHODS, PROPOSAL_METHOD]
-ALL_PUBLIC_METHOD_IDS = sorted(set(ALL_METHODS) | set(METHOD_ALIASES))
+ALL_PUBLIC_METHOD_IDS = sorted(set(ALL_METHODS) | set(METHOD_ALIASES) | set(DIAGNOSTIC_METHODS))
 
 
 def normalize_method_id(method_id: str) -> str:
@@ -87,7 +90,7 @@ def normalize_method_id(method_id: str) -> str:
 
 
 METHOD_REFS: dict[str, MethodRef] = {
-    method_id: METHOD_MODULES[method_id].METHOD_REF for method_id in ALL_METHODS
+    method_id: METHOD_MODULES[method_id].METHOD_REF for method_id in [*ALL_METHODS, *DIAGNOSTIC_METHODS]
 }
 
 

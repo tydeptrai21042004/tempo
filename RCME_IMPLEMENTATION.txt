@@ -1,0 +1,118 @@
+RCME-QIM: OPT-IN METHOD PATCH (18 October 2026)
+================================================
+
+OVERVIEW
+--------
+This patch implements a pilot-free Reliability-Constrained Minimum-Energy
+QIM candidate as a NEW registry method ID, `rcme_qim`, without overwriting
+`proposal`. It is a research prototype, not an already proven superior paper.
+
+Only two original files are modified:
+  src/realtime_watermark/registry.py
+  src/realtime_watermark/paper_fidelity.py
+New source:
+  src/realtime_watermark/proposals/rcme_qim.py
+  src/realtime_watermark/proposals/rcme_kernel.py
+New reproducibility files:
+  configs/rcme_candidate.json
+  scripts/rcme_compare.py
+  tests/test_rcme_qim.py
+  RCME_IMPLEMENTATION.txt
+Updated existing hash index: SOURCE_MANIFEST.sha256.
+
+MATHEMATICAL METHOD
+-------------------
+A fixed TEMPO DCT difference carrier and standard parity-QIM decoder are kept.
+One embedding margin m_k per selected block is chosen by a globally coupled,
+convex continuous minimization:
+
+  minimize     sum_k max(0, m_k - s_k)^2
+  subject to   sum_k 1/(m_k - eps_q)^2
+                   <= L/(m_ref - eps_q)^2
+               eps_q + 0.08*Delta <= m_k <= 0.49*Delta.
+
+Here s_k is the signed clearance of the host carrier to the nearest
+parity-valid quantizer-cell boundary; eps_q is a worst-case 8-bit rounding
+perturbation bound for a continuous, non-clipped RGB update. The single
+constraint preserves a conservative homoscedastic second-moment reliability
+surrogate relative to uniform margin m_ref. The full model is convex and has
+one scalar dual multiplier; a safeguarded Newton/bisection scheme approximates
+its solution in eight dual iterations. The resulting finite-iteration point is
+conservatively feasible but is not claimed to be numerically globally exact.
+
+The decoder sees only the fixed QIM step. Margin values need NOT be transmitted,
+so the implementation remains blind and uses a compact deterministic key.
+
+Clipping and integer conversion can invalidate continuous optimality or margins.
+The original low-level 64-step bounded-integer correction remains an explicit
+implementation safeguard, not a theorem of globally minimum UINT8 distortion.
+Strong geometric attacks are intentionally not recovered. No attack-specific
+classifier, ECC, pilot, or geometric registration was added.
+
+IMPORTANT SCOPE LIMITATIONS
+---------------------------
+* This is an analytical second-moment SURROGATE, not a verified upper bound for
+  JPEG or other named attacks. Calibration and independent holdout testing
+  remain necessary before making a decoding-reliability guarantee.
+* Minimum RGB energy holds for the unconstrained continuous carrier update.
+  A guarantee of higher realized uint8 PSNR is NOT implied, and the solver is
+  an approximate numerical solution of its defined convex margin problem.
+* The average-margin optimization needs one global extra scan of the payload
+  blocks. It can be slower than the plain pilot-free V1 baseline. No 3x FPS
+  improvement is claimed. Live effective FPS still requires a paced video test.
+* This is a method alternative, not an accepted novelty claim. Adaptive QIM,
+  constrained QIM, and KKT optimization exist in previous literature.
+
+RUN
+---
+Unzip these files over the same revision of TEMPO used as input.
+
+  python -m pip install -r requirements.txt
+  PYTHONPATH=src python -m pytest -q tests/test_rcme_qim.py
+  PYTHONPATH=src python scripts/rcme_compare.py --out evidence/rcme --max-hosts 13 --timing720
+
+To ALSO compare the original pilot-bearing method:
+
+  PYTHONPATH=src python scripts/rcme_compare.py --out evidence/rcme_full --max-hosts 13 --timing720 --include-original
+
+On Windows PowerShell set the import path before using the same commands:
+
+  $env:PYTHONPATH='src'
+  python -m pytest -q tests/test_rcme_qim.py
+  python scripts/rcme_compare.py --out evidence/rcme --max-hosts 13 --timing720
+
+Simple Python API:
+
+  from realtime_watermark.registry import embed, extract
+  watermarked, key = embed('rcme_qim', host_rgb, watermark_64x64, seed=2026)
+  recovered = extract(watermarked, key)
+
+Or use a config with exactly three fields from configs/rcme_candidate.json:
+
+  import json
+  cfg = json.load(open('configs/rcme_candidate.json'))
+  watermarked, key = embed('rcme_qim', host_rgb, watermark_64x64,
+                           seed=2026, method_params=cfg)
+
+One watermark bit is stored in one 8x8 DCT block. The host must have enough
+blocks. The original method remains registered as `proposal`.
+
+RECORDED DEVELOPMENT VALIDATION
+-------------------------------
+Measured on the 13 supplied 512x512 RGB hosts x two 64x64 watermarks,
+Numba CPU, same seed and quantizer step. This is a limited local evaluation.
+No images or old outputs are in the patch ZIP.
+
+                                          Pilot-free V1     RCME (8 dual passes)
+PSNR mean, dB                              44.905           45.021
+Exact clean recovery                       26/26            26/26
+Mean nongeometric NC (JPEG70/40, blur,noise) 0.95657         0.95779
+JPEG70 NC                                  0.99624          0.99846
+JPEG40 NC                                  0.98607          0.98796
+720p JPEG70 inverse mean service FPS      109.1            88.6
+
+The service-FPS numbers are environment- and load-dependent, and do not
+represent measured live effective throughput. Prior tests on another run
+showed somewhat different timings. As tested, RCME improved these limited
+quality metrics but WAS SLOWER than pilot-free V1. This is not evidence
+that the method improves all three PSNR, NC and FPS over V1.
