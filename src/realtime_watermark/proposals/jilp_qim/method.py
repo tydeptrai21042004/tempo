@@ -20,6 +20,8 @@ from ...core import NUMBA_AVAILABLE, arnold_inverse, arnold_period, arnold_trans
 from . import engine as _eng
 from .engine import _field_rgb as _field_rgb_kernel, _qim_margin_reliability as _qim_margin_reliability_kernel
 from .config import DEFAULT_CONFIG, JILPQIMConfig
+from .sparse_hartley_engine import sparse_carrier,sparse_leverage,embed_sparse,extract_sparse,extract_sparse_conf
+from .hartley_carrier import payload_pair
 
 METHOD_ID = "proposal"
 DEFAULT_REFERENCE_STEP = 14.875
@@ -576,11 +578,17 @@ def _extract_payload_bits_raw(img: np.ndarray, key_params: dict[str, Any], off_y
     idx = payload_indices[valid].astype(np.int32)
     ref_step = float(key_params.get("step", DEFAULT_REFERENCE_STEP))
     step1 = float(key_params.get("step_carrier1", ref_step))
-    bits = _call_with_realtime_thread_budget(
-        _eng._extract_one_carrier_bits_parallel,
-        img, idx, PAY10_BA, PAY10_BB,
-        step1, int(w_crop), bs, float(key_params.get("eta", 0.07)), int(off_y), int(off_x)
-    )
+    payload_ba, payload_bb = payload_pair(float(key_params.get("hartley_mix", 0.0)))
+    if int(key_params.get('hartley_support',0)) > 0:
+        ci,cj,cc=sparse_carrier(float(key_params.get('hartley_mix',0.0)),int(key_params['hartley_support']),str(key_params.get('hartley_carrier_mode','sparse')))
+        bits=_call_with_realtime_thread_budget(
+            extract_sparse,img,idx,ci,cj,cc,step1,int(w_crop),float(key_params.get('eta',0.07)),int(off_y),int(off_x))
+    else:
+        bits = _call_with_realtime_thread_budget(
+            _eng._extract_one_carrier_bits_parallel,
+            img, idx, payload_ba, payload_bb,
+            step1, int(w_crop), bs, float(key_params.get("eta", 0.07)), int(off_y), int(off_x)
+        )
     pos = np.arange(len(payload_indices), dtype=np.int32)[valid] % payload_len
     return bits, pos, valid
 
@@ -680,11 +688,17 @@ def _extract_payload_bits_confidence(img: np.ndarray, key_params: dict[str, Any]
     idx = payload_indices[valid].astype(np.int32)
     ref_step = float(key_params.get("step", DEFAULT_REFERENCE_STEP))
     step1 = float(key_params.get("step_carrier1", ref_step))
-    bits, conf = _call_with_realtime_thread_budget(
-        _extract_one_carrier_bits_conf_kernel,
-        img, idx, PAY10_BA, PAY10_BB,
-        step1, int(w_crop), bs, float(key_params.get("eta", 0.07)), int(off_y), int(off_x)
-    )
+    payload_ba, payload_bb = payload_pair(float(key_params.get("hartley_mix", 0.0)))
+    if int(key_params.get('hartley_support',0))>0:
+        ci,cj,cc=sparse_carrier(float(key_params.get('hartley_mix',0.0)),int(key_params['hartley_support']),str(key_params.get('hartley_carrier_mode','sparse')))
+        bits,conf=_call_with_realtime_thread_budget(
+            extract_sparse_conf,img,idx,ci,cj,cc,step1,int(w_crop),float(key_params.get('eta',0.07)),int(off_y),int(off_x))
+    else:
+        bits, conf = _call_with_realtime_thread_budget(
+            _extract_one_carrier_bits_conf_kernel,
+            img, idx, payload_ba, payload_bb,
+            step1, int(w_crop), bs, float(key_params.get("eta", 0.07)), int(off_y), int(off_x)
+        )
     pos = np.arange(len(payload_indices), dtype=np.int32)[valid] % payload_len
     return bits, pos, conf.astype(np.float32)
 
@@ -724,9 +738,17 @@ def _payload_from_shift(img: np.ndarray, key_params: dict[str, Any], sy: int, sx
     idx = payload_indices[valid].astype(np.int32)
     ref_step = float(key_params.get("step", DEFAULT_REFERENCE_STEP))
     step1 = float(key_params.get("step_carrier1", ref_step))
+    payload_ba, payload_bb = payload_pair(float(key_params.get("hartley_mix", 0.0)))
+    if int(key_params.get('hartley_support',0))>0:
+        ci,cj,cc=sparse_carrier(float(key_params.get('hartley_mix',0.0)),int(key_params['hartley_support']),str(key_params.get('hartley_carrier_mode','sparse')))
+        p_=(PAY10_BA.astype(np.float64)+PAY10_BB.astype(np.float64))/np.sqrt(2.0)
+        q_=np.zeros((8,8),dtype=np.float64)
+        q_[ci,cj]=cc*np.sqrt(2.0)
+        payload_ba=((p_+q_)/np.sqrt(2.0)).astype(np.float32)
+        payload_bb=((p_-q_)/np.sqrt(2.0)).astype(np.float32)
     bits = _call_with_realtime_thread_budget(
         _eng._extract_one_carrier_bits_shift,
-        img, idx, PAY10_BA, PAY10_BB,
+        img, idx, payload_ba, payload_bb,
         step1, int(w_crop), bs, float(key_params.get("eta", 0.07)), int(off_y), int(off_x), int(sy), int(sx)
     )
     pos = np.arange(len(payload_indices), dtype=np.int32)[valid] % payload_len
@@ -852,9 +874,24 @@ def embed_jilp_qim(
     scramble_payload: bool = True,
     phase_refinement: str = "off",
     certified_phase_pruning: bool = False,
+    hartley_mix: float = 0.0,
+    hartley_support: int = 0,
+    hartley_carrier_mode: str = "sparse",
 ) -> tuple[np.ndarray, dict[str, Any]]:
+    if hartley_carrier_mode not in ("sparse", "frequency_preserving"):
+        raise ValueError("invalid hartley_carrier_mode")
+    if hartley_carrier_mode != "sparse" and (int(hartley_support) <= 0 or not float(hartley_mix) > 0):
+        raise ValueError("frequency_preserving requires sparse Hartley payload carrier")
     if not NUMBA_AVAILABLE:
         raise RuntimeError("Numba is required for JILP-QIM real-time kernels. Install numba.")
+    payload_ba, payload_bb = payload_pair(float(hartley_mix))
+    if int(hartley_support)>0:
+        ci_,cj_,cc_=sparse_carrier(float(hartley_mix),int(hartley_support),hartley_carrier_mode)
+        p_=(PAY10_BA.astype(np.float64)+PAY10_BB.astype(np.float64))/np.sqrt(2.0)
+        q_=np.zeros((8,8),dtype=np.float64)
+        q_[ci_,cj_]=cc_*np.sqrt(2.0)
+        payload_ba=((p_+q_)/np.sqrt(2.0)).astype(np.float32)
+        payload_bb=((p_-q_)/np.sqrt(2.0)).astype(np.float32)
     if int(verify_iters) != 0:
         raise ValueError("verify_iters is obsolete; JILP-QIM has no finished-image repair loop")
     if str(projection_mode) not in {"minimum_distortion", "center_qim"}:
@@ -909,6 +946,14 @@ def embed_jilp_qim(
     else:
         params["schedule_storage"] = "regenerate_from_seed"
         params["side_information"] = "schedule_regenerated_from_seed_no_original_host"
+    if hartley_carrier_mode != "sparse":
+        params["hartley_carrier_mode"] = hartley_carrier_mode
+    if int(hartley_support)>0:
+        params["hartley_support"] = int(hartley_support)
+    if float(hartley_mix) > 0.0:
+        params["hartley_mix"] = float(hartley_mix)
+        params["payload_carrier"] = "orthogonalized weighted h-Hartley--cosine convolutional DCT carrier"
+        params["carrier_convolution"] = "h=1, gamma=cos(w), f[0]=1/2, f[+/-1]=1/4, finite zero extension"
     params["capacity"] = int(capacity)
     params["adaptive_spare_capacity"] = int(max(0, capacity - int(wm.size)))
     params["candidate_pool_used"] = int(candidate_pool_used)
@@ -937,7 +982,16 @@ def embed_jilp_qim(
             int(w_crop), BLOCK_SIZE, effective_eta
         )
 
-    if bool(use_integer_lattice_closure):
+    if int(hartley_support)>0:
+        if not bool(use_integer_lattice_closure) or str(projection_mode) != 'minimum_distortion':
+            raise ValueError('sparse carrier requires minimum-distortion integer closure')
+        ci,cj,cc=sparse_carrier(float(hartley_mix),int(hartley_support),hartley_carrier_mode)
+        rt,rc,rs=sparse_leverage(float(hartley_mix),int(hartley_support),effective_eta,hartley_carrier_mode)
+        (integer_updates,unresolved,corrected_blocks,initial_parity_failures,
+         initial_guard_failures,final_guard_failures) = _call_with_realtime_thread_budget(
+            embed_sparse,out,payload_indices_exec,bits_exec,ci,cj,cc,rt,rc,rs,
+            step1,step1*float(rho_frac),int(w_crop),effective_eta)
+    elif bool(use_integer_lattice_closure):
         kernel = (
             _eng._embed_one_carrier_jilp
             if str(projection_mode) == "minimum_distortion"
@@ -948,7 +1002,7 @@ def embed_jilp_qim(
             initial_parity_failures, initial_guard_failures, final_guard_failures,
         ) = _call_with_realtime_thread_budget(
             kernel,
-            out, payload_indices_exec, bits_exec, PAY10_BA, PAY10_BB, step1,
+            out, payload_indices_exec, bits_exec, payload_ba, payload_bb, step1,
             step1 * float(rho_frac), int(w_crop), BLOCK_SIZE, effective_eta
         )
     else:
@@ -958,7 +1012,7 @@ def embed_jilp_qim(
             else _eng._embed_one_carrier_center
         )
         kernel(
-            host, out, payload_indices_exec, bits_exec, PAY10_BA, PAY10_BB, step1,
+            host, out, payload_indices_exec, bits_exec, payload_ba, payload_bb, step1,
             step1 * float(rho_frac), int(w_crop), BLOCK_SIZE, effective_eta
         )
         integer_updates, unresolved = 0, 0
@@ -986,7 +1040,7 @@ def embed_jilp_qim(
         payload_lookup = np.full(capacity, -1, dtype=np.int16)
         payload_lookup[payload_indices] = bits.astype(np.int16)
         pilot_basis = 0.5 * (_eng.PILOT_BA - _eng.PILOT_BB)
-        payload_basis = 0.5 * (PAY10_BA - PAY10_BB)
+        payload_basis = 0.5 * (payload_ba - payload_bb)
         pilot_updates, pilot_corrected, pilot_unresolved = _eng._close_pilot_integer_joint(
             out, pilot_indices, pilot_bits, payload_lookup, pilot_basis, payload_basis,
             float(params["step_pilot"]), step1, int(w_crop), BLOCK_SIZE, effective_eta,
@@ -1071,6 +1125,9 @@ def embed_proposal(
         scramble_payload=config.scramble_payload,
         phase_refinement=config.phase_refinement,
         certified_phase_pruning=config.certified_phase_pruning,
+        hartley_mix=config.hartley_mix,
+        hartley_support=config.hartley_support,
+        hartley_carrier_mode=config.hartley_carrier_mode,
     )
     params["frozen_config"] = config.to_dict()
     params["config_hash_sha256"] = config.sha256()

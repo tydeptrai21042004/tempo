@@ -1,0 +1,13 @@
+{
+  "src/realtime_watermark/proposals/jilp_qim/config.py": "2f2f102a3b46d4ea6a5374b8db46451ca4a6666593b7df5690fa87c440cd2eb9",
+  "src/realtime_watermark/proposals/jilp_qim/method.py": "5f0f944509d7a171b8761fadaa84fb76af3409904c5157d6e6071b4f643285d5",
+  "src/realtime_watermark/proposals/jilp_qim/hartley_carrier.py": "5d7d80de1c5578c28f9c805458275d90881ff323eaa42e101bed451cd8ea3a92",
+  "src/realtime_watermark/proposals/jilp_qim/sparse_hartley_engine.py": "828b9b9ae0f78e73d09f857ece3818a6191b5dcc6f04dfe7c25aa762c5c18b89",
+  "tests/test_hartley_convolution_carrier.py": "626dc6cd4fe74789c6a5051c0b3fd46dea12a82278bb7b10d94e30ea7f45e080",
+  "tests/test_sparse_hartley_speed.py": "107fec3867900878f240f70441de2d4d49f9c0a91d732be8f30a1cea9c4ec68b",
+  "tests/test_frequency_preserving_hartley.py": "8c43c14a7ce080128229746e540edc5483a0584a2c3ef1d538d7ddf692313747",
+  "scripts/frequency_preserving_hartley_compare.py": "40909645a35f968a8d7ddd3aa9215b4ee7e4ba5ddfab006a546254d33d3f1354",
+  "configs/hartley_frequency_preserving48_candidate.json": "640f901c7dae44a408d7b347e0185fa2f74d126007cf2ff73d428fc006bd088f",
+  "ORIGINAL_TO_NEW_SOURCE.diff": "332fb8ad600227446eceae3c9885774f5b1aa7e37756e03c8d3b6697dba0be24",
+  "HARTLEY_FREQUENCY_PRESERVING_PATCH_README.md": "50c4bc031199fdd50756fd4a3b182b0d54a5970f68e7837fc61d0c033811d3cd"
+}

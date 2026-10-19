@@ -32,6 +32,9 @@ class JILPQIMConfig:
     scramble_payload: bool = True
     phase_refinement: str = "off"
     certified_phase_pruning: bool = False
+    hartley_mix: float = 0.0  # experimental weighted-convolution payload carrier
+    hartley_support: int = 0  # 0=original; even 2-56=compute-limited convolution carrier
+    hartley_carrier_mode: str = "sparse"  # opt-in frequency-preserving carrier
 
     def validated(self) -> "JILPQIMConfig":
         if self.step <= 0 or self.pilot_step <= 0:
@@ -56,6 +59,14 @@ class JILPQIMConfig:
             raise ValueError("unsupported temporal_vote_mode")
         if self.phase_refinement not in {"off", "selective"}:
             raise ValueError("phase_refinement must be off or selective")
+        if not (0.0 <= self.hartley_mix <= 1.0):
+            raise ValueError("hartley_mix must lie in [0,1]")
+        if self.hartley_support and (self.hartley_support < 2 or self.hartley_support>56 or self.hartley_support%2):
+            raise ValueError("hartley_support must be even 2-56")
+        if self.hartley_carrier_mode not in {"sparse", "frequency_preserving"}:
+            raise ValueError("invalid hartley_carrier_mode")
+        if self.hartley_carrier_mode != "sparse" and (self.hartley_support == 0 or self.hartley_mix <= 0):
+            raise ValueError("frequency_preserving requires positive hartley_mix and sparse support")
         if self.use_second_carrier:
             raise ValueError("the released repair-free proposal uses one payload carrier")
         return self
@@ -68,6 +79,12 @@ class JILPQIMConfig:
             values.pop("phase_refinement")
         if not self.certified_phase_pruning:
             values.pop("certified_phase_pruning")
+        if self.hartley_mix == 0.0:
+            values.pop("hartley_mix")
+        if self.hartley_support == 0:
+            values.pop("hartley_support")
+        if self.hartley_carrier_mode == "sparse":
+            values.pop("hartley_carrier_mode")
         return values
 
     def canonical_json(self) -> str:
