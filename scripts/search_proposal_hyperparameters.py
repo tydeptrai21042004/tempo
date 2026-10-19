@@ -193,6 +193,12 @@ def main() -> None:
         rho_values = (0.35, 0.45)
         eta_values = (0.05, 0.07, 0.10)
 
+    # The sparse Hartley embedding kernel implements only minimum-distortion
+    # integer closure. Center-QIM is a valid control for the original dense
+    # carrier, but it is not an implemented sparse Hartley candidate.
+    if base.hartley_support > 0:
+        projections = ("minimum_distortion",)
+
     stage1: list[JILPQIMConfig] = []
     for projection_mode in projections:
         for field_mode in fields:

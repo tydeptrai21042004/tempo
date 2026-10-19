@@ -67,6 +67,10 @@ class JILPQIMConfig:
             raise ValueError("invalid hartley_carrier_mode")
         if self.hartley_carrier_mode != "sparse" and (self.hartley_support == 0 or self.hartley_mix <= 0):
             raise ValueError("frequency_preserving requires positive hartley_mix and sparse support")
+        if self.hartley_support > 0 and (
+            not self.use_integer_lattice_closure or self.projection_mode != "minimum_distortion"
+        ):
+            raise ValueError("sparse Hartley carrier requires minimum-distortion integer closure")
         if self.use_second_carrier:
             raise ValueError("the released repair-free proposal uses one payload carrier")
         return self

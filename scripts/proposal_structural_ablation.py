@@ -18,13 +18,25 @@ from scripts.proposal_study_common import load_watermark, run_variants
 
 
 def structural_variants(config: JILPQIMConfig, include_security: bool = False):
-    variants = [
-        ("full_primary_method", config.to_dict(), None),
-        (
+    variants = [("full_primary_method", config.to_dict(), None)]
+    if config.hartley_support > 0:
+        # A center-QIM sparse-carrier kernel does not exist. Compare against
+        # the dense original carrier instead of reporting an invalid ablation.
+        variants.append((
+            "without_hartley_convolution",
+            replace(
+                config, hartley_mix=0.0, hartley_support=0,
+                hartley_carrier_mode="sparse",
+            ).to_dict(),
+            "hartley_convolutional_carrier",
+        ))
+    else:
+        variants.append((
             "center_qim_instead_of_minimum_distortion",
             replace(config, projection_mode="center_qim").to_dict(),
             "minimum_distortion_projection",
-        ),
+        ))
+    variants.extend([
         (
             "without_orthogonal_pilots",
             replace(config, enable_pilots=False, enable_sync_search=False, pilot_count=0).to_dict(),
@@ -45,7 +57,7 @@ def structural_variants(config: JILPQIMConfig, include_security: bool = False):
             replace(config, field_mode="luminance").to_dict(),
             "opponent_color_field",
         ),
-    ]
+    ])
     if include_security:
         variants.append((
             "without_payload_scrambling",
@@ -145,6 +157,10 @@ def main() -> None:
             "calibration_details": calibration_details,
             "temporal_vote_excluded": True,
             "integer_closure_ablation_excluded": "previous data did not activate a measurable difference; not claimed separately",
+            "center_qim_ablation_status": (
+                "not_applicable_to_sparse_hartley_kernel" if config.hartley_support > 0 else "included"
+            ),
+            "without_hartley_convolution_control": bool(config.hartley_support > 0),
             "schedule_variant_is_a_policy_study": True,
             "variants": [
                 {"variant": label, "changed_component": changed, "parameters": params}
