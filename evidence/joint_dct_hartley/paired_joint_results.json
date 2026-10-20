@@ -1,0 +1,558 @@
+{
+  "protocol": {
+    "hosts": 12,
+    "watermarks": 2,
+    "bits": 4096,
+    "attacks": [
+      "clean",
+      "jpeg70"
+    ],
+    "num_repeats": 3
+  },
+  "summary": {
+    "sequential": {
+      "psnr_db": 44.834839628988185,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.9956461588541666,
+      "embed_median_ms": 1.4030502916666665,
+      "extract_median_ms": 0.3974577916666666
+    },
+    "orthogonal_joint": {
+      "psnr_db": 44.836049991646654,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.9955240885416666,
+      "embed_median_ms": 1.4909972083333336,
+      "extract_median_ms": 0.3948158749999999
+    }
+  },
+  "rows": [
+    {
+      "host": "Girl.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "sequential",
+      "psnr_db": 45.10945922168651,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.9970703125,
+      "embed_median_ms": 1.82144,
+      "extract_median_ms": 0.431805,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "Girl.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 45.11049490820754,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.9970703125,
+      "embed_median_ms": 1.678196,
+      "extract_median_ms": 0.406117,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "Girl.bmp",
+      "watermark": "wm.png",
+      "mode": "sequential",
+      "psnr_db": 44.68476670513927,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.9970703125,
+      "embed_median_ms": 1.609564,
+      "extract_median_ms": 0.452746,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "Girl.bmp",
+      "watermark": "wm.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.6865328534184,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.99658203125,
+      "embed_median_ms": 1.759599,
+      "extract_median_ms": 0.41517,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "airplane.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "sequential",
+      "psnr_db": 45.138086431800424,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.601993,
+      "extract_median_ms": 0.415561,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "airplane.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 45.138771261539034,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.73379,
+      "extract_median_ms": 0.423883,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "airplane.bmp",
+      "watermark": "wm.png",
+      "mode": "sequential",
+      "psnr_db": 44.44246250715438,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.630184,
+      "extract_median_ms": 0.418485,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "airplane.bmp",
+      "watermark": "wm.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.44262785377829,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.633039,
+      "extract_median_ms": 0.438064,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "athens.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "sequential",
+      "psnr_db": 44.860255865051144,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.612659,
+      "extract_median_ms": 0.410964,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "athens.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.860708387610245,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.622483,
+      "extract_median_ms": 0.446947,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "athens.bmp",
+      "watermark": "wm.png",
+      "mode": "sequential",
+      "psnr_db": 44.560773079872725,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.592438,
+      "extract_median_ms": 0.403533,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "athens.bmp",
+      "watermark": "wm.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.56243851402583,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.636754,
+      "extract_median_ms": 0.411335,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "baboon.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "sequential",
+      "psnr_db": 44.71255105921222,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.618337,
+      "extract_median_ms": 0.684923,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "baboon.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.71455235374202,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 2.199495,
+      "extract_median_ms": 0.484103,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "baboon.bmp",
+      "watermark": "wm.png",
+      "mode": "sequential",
+      "psnr_db": 44.71419275673645,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.645387,
+      "extract_median_ms": 0.424895,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "baboon.bmp",
+      "watermark": "wm.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.715872807915545,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.685687,
+      "extract_median_ms": 0.418966,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "butfly.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "sequential",
+      "psnr_db": 44.83073593989659,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.637586,
+      "extract_median_ms": 0.451384,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "butfly.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.832549550963606,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.701671,
+      "extract_median_ms": 0.482731,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "butfly.bmp",
+      "watermark": "wm.png",
+      "mode": "sequential",
+      "psnr_db": 44.765497432649745,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.675262,
+      "extract_median_ms": 0.426177,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "butfly.bmp",
+      "watermark": "wm.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.76636771892917,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.708933,
+      "extract_median_ms": 0.432896,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "house.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "sequential",
+      "psnr_db": 44.989081570964416,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.99951171875,
+      "embed_median_ms": 1.568723,
+      "extract_median_ms": 0.432917,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "house.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.989180690123966,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.99951171875,
+      "embed_median_ms": 1.603655,
+      "extract_median_ms": 0.429421,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "house.bmp",
+      "watermark": "wm.png",
+      "mode": "sequential",
+      "psnr_db": 44.512347949181404,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.99951171875,
+      "embed_median_ms": 1.067634,
+      "extract_median_ms": 0.435781,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "house.bmp",
+      "watermark": "wm.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.513413842726976,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.99951171875,
+      "embed_median_ms": 1.240803,
+      "extract_median_ms": 0.307469,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "manhatan.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "sequential",
+      "psnr_db": 44.91117062577661,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.08468,
+      "extract_median_ms": 0.30137,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "manhatan.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.91132060883011,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.628502,
+      "extract_median_ms": 0.446557,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "manhatan.bmp",
+      "watermark": "wm.png",
+      "mode": "sequential",
+      "psnr_db": 44.650698813303855,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.587601,
+      "extract_median_ms": 0.440778,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "manhatan.bmp",
+      "watermark": "wm.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.651397683799985,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.031841,
+      "extract_median_ms": 0.321149,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "milkdrop.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "sequential",
+      "psnr_db": 45.245093390955226,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.994140625,
+      "embed_median_ms": 1.292651,
+      "extract_median_ms": 0.311254,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "milkdrop.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 45.24604256540133,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.9931640625,
+      "embed_median_ms": 1.608562,
+      "extract_median_ms": 0.444635,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "milkdrop.bmp",
+      "watermark": "wm.png",
+      "mode": "sequential",
+      "psnr_db": 44.533083731977506,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.99072265625,
+      "embed_median_ms": 1.566389,
+      "extract_median_ms": 0.444194,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "milkdrop.bmp",
+      "watermark": "wm.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.53388936617876,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.98974609375,
+      "embed_median_ms": 1.658427,
+      "extract_median_ms": 0.409942,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "pepper.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "sequential",
+      "psnr_db": 44.93255461713335,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.984375,
+      "embed_median_ms": 1.58034,
+      "extract_median_ms": 0.460277,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "pepper.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.93397479757793,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.984375,
+      "embed_median_ms": 1.141355,
+      "extract_median_ms": 0.318766,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "pepper.bmp",
+      "watermark": "wm.png",
+      "mode": "sequential",
+      "psnr_db": 44.797345657766854,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.984375,
+      "embed_median_ms": 0.998,
+      "extract_median_ms": 0.305596,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "pepper.bmp",
+      "watermark": "wm.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.79960183293795,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.984375,
+      "embed_median_ms": 1.093312,
+      "extract_median_ms": 0.328791,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "safari.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "sequential",
+      "psnr_db": 44.81273396346799,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.096748,
+      "extract_median_ms": 0.300408,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "safari.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.81306322621927,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.110879,
+      "extract_median_ms": 0.367158,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "safari.bmp",
+      "watermark": "wm.png",
+      "mode": "sequential",
+      "psnr_db": 44.65777945717751,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.172801,
+      "extract_median_ms": 0.305216,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "safari.bmp",
+      "watermark": "wm.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.65984009581983,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.323336,
+      "extract_median_ms": 0.297995,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "sailboat.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "sequential",
+      "psnr_db": 44.93751007470596,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 0.993333,
+      "extract_median_ms": 0.30088,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "sailboat.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.93829372928289,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.093824,
+      "extract_median_ms": 0.310654,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "sailboat.bmp",
+      "watermark": "wm.png",
+      "mode": "sequential",
+      "psnr_db": 44.61521209861067,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.047634,
+      "extract_median_ms": 0.377123,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "sailboat.bmp",
+      "watermark": "wm.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 44.61635271338758,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 1.0,
+      "embed_median_ms": 1.180654,
+      "extract_median_ms": 0.346909,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "tiffany.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "sequential",
+      "psnr_db": 45.49929903621031,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.97705078125,
+      "embed_median_ms": 1.092351,
+      "extract_median_ms": 0.298055,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "tiffany.bmp",
+      "watermark": "Cc.logo.circle.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 45.5021621554197,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.9765625,
+      "embed_median_ms": 1.009187,
+      "extract_median_ms": 0.345365,
+      "joint_overlap_blocks": 96
+    },
+    {
+      "host": "tiffany.bmp",
+      "watermark": "wm.png",
+      "mode": "sequential",
+      "psnr_db": 45.12345910928501,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.9716796875,
+      "embed_median_ms": 1.079472,
+      "extract_median_ms": 0.304665,
+      "joint_overlap_blocks": 0
+    },
+    {
+      "host": "tiffany.bmp",
+      "watermark": "wm.png",
+      "mode": "orthogonal_joint",
+      "psnr_db": 45.125750281683835,
+      "clean_nc": 1.0,
+      "jpeg70_nc": 0.9716796875,
+      "embed_median_ms": 1.699949,
+      "extract_median_ms": 0.440558,
+      "joint_overlap_blocks": 96
+    }
+  ]
+}

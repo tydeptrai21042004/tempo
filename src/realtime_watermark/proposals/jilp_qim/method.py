@@ -21,7 +21,9 @@ from . import engine as _eng
 from .engine import _field_rgb as _field_rgb_kernel, _qim_margin_reliability as _qim_margin_reliability_kernel
 from .config import DEFAULT_CONFIG, JILPQIMConfig
 from .sparse_hartley_engine import sparse_carrier,sparse_leverage,embed_sparse,extract_sparse,extract_sparse_conf
+from .joint_hartley_engine import embed_sparse_joint
 from .hartley_carrier import payload_pair
+from .compiled_permutation import permute_arnold_exact, inverse_arnold_exact
 
 METHOD_ID = "proposal"
 DEFAULT_REFERENCE_STEP = 14.875
@@ -412,6 +414,31 @@ def _compiled_full_capacity_schedule(
     return payload_indices, pilot_indices, pilot_bits
 
 
+@lru_cache(maxsize=128)
+def _cached_random_frame_plan(
+    h_crop: int, w_crop: int, payload_len: int,
+    seed: int, pilot_count: int, pilot_schedule: str, block_size: int,
+):
+    """Key/geometry-defined plan, independent of host pixels and attack.
+
+    Cached arrays are read-only. The schedule is the exact same NumPy seeded
+    permutation and independent pilot schedule as the original implementation.
+    """
+    capacity = (h_crop // block_size) * (w_crop // block_size)
+    payload = np.random.default_rng(int(seed)).permutation(capacity)[:payload_len].astype(np.int32)
+    count = int(min(max(0, pilot_count), capacity))
+    if pilot_schedule == "stratified":
+        pilots = _make_stratified_pilot_indices(
+            h_crop, w_crop, pilot_count=count, seed=int(seed), block_size=block_size)
+    else:
+        pilots = np.random.default_rng(int(seed)+919).permutation(capacity)[:count].astype(np.int32)
+    bits = _balanced_pilot_bits(len(pilots), int(seed))
+    order = np.argsort(payload, kind="stable").astype(np.int32)
+    for a in (payload, pilots, bits, order):
+        a.setflags(write=False)
+    return payload, pilots, bits, order
+
+
 def _make_content_adaptive_schedules(
     host_rgb: np.ndarray,
     watermark_shape: tuple[int, int],
@@ -449,6 +476,12 @@ def _make_content_adaptive_schedules(
     # when the single method is explicitly given a spare candidate pool. With the
     # default pool_size == payload_len, scoring would not change the selected
     # payload schedule; skip it to keep embedding complexity tied to payload size.
+    if pool_size <= payload_len and str(payload_schedule_mode).lower() == "random":
+        payload_indices, pilot_indices, pilot_bits, _order = _cached_random_frame_plan(
+            h_crop, w_crop, payload_len, int(seed), int(pilot_count),
+            str(pilot_schedule).lower(), int(block_size))
+        return payload_indices, pilot_indices, pilot_bits, capacity, h_crop, w_crop, pool_size
+
     if pool_size <= payload_len:
         payload_indices = rng.permutation(capacity)[:payload_len].astype(np.int32)
         pool = payload_indices
@@ -525,6 +558,12 @@ def _schedules_from_key(params: dict[str, Any]) -> tuple[np.ndarray, np.ndarray,
     pool_size = int(min(capacity, max(payload_len, int(np.ceil(payload_len * multiplier)))))
     if budget is not None:
         pool_size = int(min(capacity, max(payload_len, int(budget))))
+
+    if mode == "random" and pool_size <= payload_len:
+        payload_indices, pilot_indices_cached, pilot_bits_cached, _order = _cached_random_frame_plan(
+            h_crop, w_crop, payload_len, seed, pilot_count,
+            str(params.get("pilot_schedule", "random")).lower(), bs)
+        return payload_indices, pilot_indices_cached, pilot_bits_cached, capacity, h_crop, w_crop
 
     if capacity <= payload_len:
         payload_indices, pilot_indices_cached, pilot_bits_cached = _compiled_full_capacity_schedule(
@@ -716,7 +755,7 @@ def _payload_from_candidate(img: np.ndarray, key_params: dict[str, Any], off_y: 
         np.add.at(votes1, pos[bits == 1], 1)
         rec_scr = (votes1 > votes0).astype(np.uint8).reshape(wm_shape)
     rec = (
-        arnold_inverse(rec_scr, int(key_params["arnold_iter"]), int(key_params["arnold_period"]))
+        inverse_arnold_exact(rec_scr, int(key_params["arnold_iter"]), int(key_params["arnold_period"]))
         if bool(key_params.get("scramble_payload", True)) else rec_scr
     )
     return (rec * 255).astype(np.uint8), int(np.sum(valid))
@@ -761,7 +800,7 @@ def _payload_from_shift(img: np.ndarray, key_params: dict[str, Any], sy: int, sx
         np.add.at(votes1, pos[bits == 1], 1)
         rec_scr = (votes1 > votes0).astype(np.uint8).reshape(wm_shape)
     rec = (
-        arnold_inverse(rec_scr, int(key_params["arnold_iter"]), int(key_params["arnold_period"]))
+        inverse_arnold_exact(rec_scr, int(key_params["arnold_iter"]), int(key_params["arnold_period"]))
         if bool(key_params.get("scramble_payload", True)) else rec_scr
     )
     return (rec * 255).astype(np.uint8), int(np.sum(valid))
@@ -877,7 +916,15 @@ def embed_jilp_qim(
     hartley_mix: float = 0.0,
     hartley_support: int = 0,
     hartley_carrier_mode: str = "sparse",
+    joint_embedding: str = "sequential",
 ) -> tuple[np.ndarray, dict[str, Any]]:
+    if joint_embedding not in ("sequential", "orthogonal_joint"):
+        raise ValueError("unsupported joint_embedding")
+    if joint_embedding == "orthogonal_joint" and (
+        int(hartley_support) == 0 or not enable_pilots or not use_integer_lattice_closure or
+        projection_mode != "minimum_distortion"
+    ):
+        raise ValueError("orthogonal_joint requires sparse Hartley payload, pilots and integer closure")
     if hartley_carrier_mode not in ("sparse", "frequency_preserving"):
         raise ValueError("invalid hartley_carrier_mode")
     if hartley_carrier_mode != "sparse" and (int(hartley_support) <= 0 or not float(hartley_mix) > 0):
@@ -946,6 +993,9 @@ def embed_jilp_qim(
     else:
         params["schedule_storage"] = "regenerate_from_seed"
         params["side_information"] = "schedule_regenerated_from_seed_no_original_host"
+    if joint_embedding != "sequential":
+        params["joint_embedding"] = joint_embedding
+        params["joint_projection"] = "orthogonal two-constraint minimum-norm RGB projection on payload/pilot overlaps"
     if hartley_carrier_mode != "sparse":
         params["hartley_carrier_mode"] = hartley_carrier_mode
     if int(hartley_support)>0:
@@ -961,7 +1011,7 @@ def embed_jilp_qim(
     params["structural_components"]["content_adaptive_schedule"] = actual_content_adaptation
 
     bits = (
-        arnold_transform(wm, int(params["arnold_iter"]))
+        permute_arnold_exact(wm, int(params["arnold_iter"]))
         if bool(scramble_payload) else wm
     ).ravel().astype(np.uint8)
     out = host.copy()
@@ -970,14 +1020,45 @@ def embed_jilp_qim(
     # Physical traversal is separated from the keyed logical bit schedule.
     # Processing blocks in raster order improves cache locality without changing
     # which bit is assigned to any block.
-    execution_order = np.argsort(payload_indices, kind="stable")
+    if str(payload_schedule_mode).lower() == "random" and int(candidate_pool_used) <= int(wm.size):
+        execution_order = _cached_random_frame_plan(
+            int(_h_crop), int(w_crop), int(wm.size), int(seed),
+            int(pilot_count if enable_pilots else 0),
+            str(pilot_schedule).lower(), BLOCK_SIZE)[3]
+    else:
+        execution_order = np.argsort(payload_indices, kind="stable")
     payload_indices_exec = payload_indices[execution_order]
     bits_exec = bits[execution_order]
 
-    # Pilots use the exactly orthogonal low-frequency sum carrier.
-    if bool(enable_pilots) and len(pilot_indices):
+    # On shared blocks the optional joint formulation projects the pilot and
+    # Hartley payload in one minimum-norm update. Unshared blocks retain the
+    # original sparse QIM kernel, so no watermark or geometric attack branches
+    # are introduced. Joint formulation is *opt-in* and independently ablated.
+    use_joint = (joint_embedding == "orthogonal_joint" and bool(enable_pilots) and len(pilot_indices)>0)
+    pilot_only_indices = pilot_indices
+    pilot_only_bits = pilot_bits
+    joint_indices = np.empty(0,dtype=np.int32)
+    joint_bits = np.empty(0,dtype=np.uint8)
+    joint_pilot_bits = np.empty(0,dtype=np.uint8)
+    sparse_indices = payload_indices_exec
+    sparse_bits = bits_exec
+    if use_joint:
+        payload_by_block = np.full(capacity,-1,dtype=np.int32)
+        payload_by_block[payload_indices_exec] = np.arange(len(payload_indices_exec),dtype=np.int32)
+        is_joint_pilot = payload_by_block[pilot_indices] >= 0
+        pilot_only_indices=pilot_indices[~is_joint_pilot]
+        pilot_only_bits=pilot_bits[~is_joint_pilot]
+        joint_indices=pilot_indices[is_joint_pilot]
+        joint_pilot_bits=pilot_bits[is_joint_pilot]
+        joint_bits=bits_exec[payload_by_block[joint_indices]]
+        selected=np.zeros(capacity,dtype=np.bool_)
+        selected[joint_indices]=True
+        sparse_mask=~selected[payload_indices_exec]
+        sparse_indices=payload_indices_exec[sparse_mask]
+        sparse_bits=bits_exec[sparse_mask]
+    if bool(enable_pilots) and len(pilot_only_indices):
         _eng._embed_one_carrier_md(
-            host, out, pilot_indices, pilot_bits, _eng.PILOT_BA, _eng.PILOT_BB,
+            host, out, pilot_only_indices, pilot_only_bits, _eng.PILOT_BA, _eng.PILOT_BB,
             float(params["step_pilot"]), float(params["step_pilot"]) * float(params["pilot_rho_frac"]),
             int(w_crop), BLOCK_SIZE, effective_eta
         )
@@ -987,10 +1068,23 @@ def embed_jilp_qim(
             raise ValueError('sparse carrier requires minimum-distortion integer closure')
         ci,cj,cc=sparse_carrier(float(hartley_mix),int(hartley_support),hartley_carrier_mode)
         rt,rc,rs=sparse_leverage(float(hartley_mix),int(hartley_support),effective_eta,hartley_carrier_mode)
-        (integer_updates,unresolved,corrected_blocks,initial_parity_failures,
-         initial_guard_failures,final_guard_failures) = _call_with_realtime_thread_budget(
-            embed_sparse,out,payload_indices_exec,bits_exec,ci,cj,cc,rt,rc,rs,
+        stats = _call_with_realtime_thread_budget(
+            embed_sparse,out,sparse_indices,sparse_bits,ci,cj,cc,rt,rc,rs,
             step1,step1*float(rho_frac),int(w_crop),effective_eta)
+        if use_joint and len(joint_indices):
+            pilot_basis=0.5*(_eng.PILOT_BA.astype(np.float64)-_eng.PILOT_BB.astype(np.float64))
+            dense_payload_basis=np.zeros((8,8),dtype=np.float64)
+            dense_payload_basis[ci,cj]=cc
+            joint_stats=_call_with_realtime_thread_budget(
+                embed_sparse_joint,out,joint_indices,joint_bits,joint_pilot_bits,
+                ci,cj,cc,pilot_basis,dense_payload_basis,rt,rc,rs,step1,step1*float(rho_frac),
+                float(params['step_pilot']),float(params['step_pilot'])*float(params['pilot_rho_frac']),
+                int(w_crop),effective_eta)
+            stats=tuple(int(x)+int(y) for x,y in zip(stats,joint_stats))
+        (integer_updates,unresolved,corrected_blocks,initial_parity_failures,
+         initial_guard_failures,final_guard_failures)=stats
+        if use_joint:
+            params['joint_overlap_blocks']=int(len(joint_indices))
     elif bool(use_integer_lattice_closure):
         kernel = (
             _eng._embed_one_carrier_jilp
@@ -1128,6 +1222,7 @@ def embed_proposal(
         hartley_mix=config.hartley_mix,
         hartley_support=config.hartley_support,
         hartley_carrier_mode=config.hartley_carrier_mode,
+        joint_embedding=config.joint_embedding,
     )
     params["frozen_config"] = config.to_dict()
     params["config_hash_sha256"] = config.sha256()

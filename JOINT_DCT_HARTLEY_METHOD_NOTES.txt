@@ -1,0 +1,88 @@
+JOINT DCT-HARTLEY QIM EXPERIMENTAL PATCH (2026-10-20)
+==================================================
+
+Purpose
+-------
+Combines the manuscript's orthogonal DCT pilot + minimum-energy QIM embedding
+with the repository's antisymmetric 48-coefficient frequency-preserving
+weighted h-Hartley convolution carrier.
+
+The 60-FPS bounded-memory streaming implementation from the prior verified
+repository is kept unchanged, except verify_60fps.py now accepts --config.
+The original proposal_frozen.json and previous Hartley candidate are unchanged.
+
+Mathematical joint update (overlapping payload/pilot blocks only)
+----------------------------------------------------------------
+Q := the sparse, antisymmetric Hartley-convolution payload direction.
+P := (DCT_01 + DCT_10)/2, the symmetric orthogonal DCT pilot direction.
+< Q, P > = 0 and ||Q||_F^2 = ||P||_F^2 = 1/2.
+F(R,G,B) = g^T [R,G,B] with g = (.299+eta,.587-eta/2,.114-eta/2).
+Let dp and ds be minimum-distortion guarded QIM displacements.
+The continuous solution to
+  minimize ||delta_RGB||_2^2, subject to
+  <g^T delta_RGB,Q>=dp and <g^T delta_RGB,P>=ds
+is (at every pixel i,j)
+  delta_RGB[i,j,:] = 2*(dp*Q[i,j] + ds*P[i,j])*g/||g||^2.
+
+Proof: projection to two orthogonal constraint normals and Cauchy-Schwarz.
+The result is uniquely minimum-energy in the CONTINUOUS unclipped model.
+After rounding, the same bounded payload integer closure and pilot parity
+closure as the existing proposal are used. No global integer optimum is claimed.
+
+Since the two carriers are orthogonal, sequential continuous projections
+are algebraically equivalent to the joint continuous solution; the actual
+change is a single joint rounded update on overlapping blocks, with different
+rounding trajectory. Do not claim a new theorem about convolution or universal
+performance gains based on this algebraic reorganization alone.
+
+Changes
+-------
+  configs/joint_dct_hartley48_candidate.json             opt-in candidate
+  src/realtime_watermark/proposals/jilp_qim/config.py    opt-in parameter/validation
+  src/realtime_watermark/proposals/jilp_qim/method.py    pilot/payload overlap routing
+  src/realtime_watermark/proposals/jilp_qim/joint_hartley_engine.py  joint kernel
+  scripts/proposal_structural_ablation.py               fair separate ablation
+  scripts/benchmark_joint_dct_hartley.py                paired image benchmark
+  scripts/verify_60fps.py                              optional --config flag
+  tests/test_joint_dct_hartley.py                       tests of constraints and roundtrip
+  SOURCE_MANIFEST.sha256                                updated source verification
+  evidence/joint_dct_hartley/*                         measured local comparisons
+
+Safety / protocol
+-----------------
+Uses 4096 bits for both real 64x64 watermark images. No ECC, no changed
+image attack list, no change to original frozen configs. Maintains 48 support,
+0.6 mix, minimum-distortion guarded QIM, orthogonal pilots, integer closure,
+blind extraction. Geometry search unchanged. No attack-specific branches.
+
+The new config is opt-in: do NOT overwrite proposal_frozen.json with it or
+replace manuscript results until fully validated over 74 attacks, 12 hosts,
+both watermarks, and repeatable streaming measurements on your intended CPU.
+
+Observed locally on 12 hosts x 2 watermarks (three timing samples each):
+  Sequential: PSNR 44.83484 dB, clean NC 1, JPEG70 NC 0.995646,
+              mean per-case median embed 1.40305 ms, extract 0.39746 ms.
+  Joint:      PSNR 44.83605 dB, clean NC 1, JPEG70 NC 0.995524,
+              mean per-case median embed 1.49100 ms, extract 0.39482 ms.
+The joint version is NOT demonstrably faster nor more robust. These local
+single-attack results cannot replace the paper's full attack suite.
+
+60-Hz 720p JPEG70 4096-bit *120-frame* local trials:
+  Both variants: 120/120 frames per watermark, 60 effective FPS,
+  120/120 on-time for each watermark, zero drops, mean NC=1.000.
+Longer joint trials in the available logs: 300/300, on-time 297/300;
+300/300, 300/300; 300/300, 296/300. A fourth 300-frame trial was stopped
+before result production due to local execution timeout. These are not
+long-term deterministic timing guarantees.
+
+Commands (from existing repository root, after overlaying the patch):
+  export PYTHONPATH=src:. JILP_NUM_THREADS=2 NUMBA_NUM_THREADS=2
+  python scripts/verify_source_manifest.py
+  python -m pytest -q tests/test_joint_dct_hartley.py
+  python scripts/benchmark_joint_dct_hartley.py --repeats 3 --output paired.json
+  python scripts/verify_60fps.py --frames 180 --rate 60 --repeats 2 \
+    --codec cv2 --config configs/joint_dct_hartley48_candidate.json \
+    --output real_60fps_joint.json
+
+To rollback: set joint_embedding="sequential" or use the unchanged
+configs/hartley_frequency_preserving48_candidate.json file.

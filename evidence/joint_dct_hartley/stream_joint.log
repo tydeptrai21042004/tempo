@@ -1,0 +1,4 @@
+START wm.png calib 44.86912948919741 step 31.37976511375988 threads 2 codec cv2
+RESULT wm.png trial 0 fps 60.0 processed 120 / 120 ontime 120 / 120 drops 0 p95 lat 9.965 p95 service 9.861 psnr 44.87 nc 1.0
+START Cc.logo.circle.png calib 44.840980038698405 step 37.0302697584157 threads 2 codec cv2
+RESULT Cc.logo.circle.png trial 0 fps 60.0 processed 120 / 120 ontime 120 / 120 drops 0 p95 lat 8.15 p95 service 8.054 psnr 44.841 nc 1.0

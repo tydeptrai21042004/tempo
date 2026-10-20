@@ -19,6 +19,12 @@ from scripts.proposal_study_common import load_watermark, run_variants
 
 def structural_variants(config: JILPQIMConfig, include_security: bool = False):
     variants = [("full_primary_method", config.to_dict(), None)]
+    if config.joint_embedding == "orthogonal_joint":
+        variants.append((
+            "without_joint_projection",
+            replace(config, joint_embedding="sequential").to_dict(),
+            "joint_dct_hartley_minimum_norm_projection",
+        ))
     if config.hartley_support > 0:
         # A center-QIM sparse-carrier kernel does not exist. Compare against
         # the dense original carrier instead of reporting an invalid ablation.
@@ -26,7 +32,7 @@ def structural_variants(config: JILPQIMConfig, include_security: bool = False):
             "without_hartley_convolution",
             replace(
                 config, hartley_mix=0.0, hartley_support=0,
-                hartley_carrier_mode="sparse",
+                hartley_carrier_mode="sparse", joint_embedding="sequential",
             ).to_dict(),
             "hartley_convolutional_carrier",
         ))
@@ -39,7 +45,8 @@ def structural_variants(config: JILPQIMConfig, include_security: bool = False):
     variants.extend([
         (
             "without_orthogonal_pilots",
-            replace(config, enable_pilots=False, enable_sync_search=False, pilot_count=0).to_dict(),
+            replace(config, enable_pilots=False, enable_sync_search=False, pilot_count=0,
+                    joint_embedding="sequential").to_dict(),
             "orthogonal_pilots",
         ),
         (

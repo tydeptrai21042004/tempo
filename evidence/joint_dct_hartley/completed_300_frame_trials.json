@@ -1,0 +1,9 @@
+{
+  "completed_trials": 3,
+  "result_lines": [
+    "RESULT wm.png trial 0 fps 60.0 processed 300 / 300 ontime 297 / 300 drops 0 p95 lat 8.337 p95 service 8.054 psnr 44.87 nc 1.0",
+    "RESULT wm.png trial 1 fps 60.0 processed 300 / 300 ontime 300 / 300 drops 0 p95 lat 8.833 p95 service 8.75 psnr 44.87 nc 1.0",
+    "RESULT Cc.logo.circle.png trial 0 fps 60.0 processed 300 / 300 ontime 296 / 300 drops 0 p95 lat 9.147 p95 service 8.853 psnr 44.841 nc 1.0"
+  ],
+  "note": "fourth long-run trial did not complete before test timeout; result not counted"
+}

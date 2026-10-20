@@ -35,6 +35,7 @@ class JILPQIMConfig:
     hartley_mix: float = 0.0  # experimental weighted-convolution payload carrier
     hartley_support: int = 0  # 0=original; even 2-56=compute-limited convolution carrier
     hartley_carrier_mode: str = "sparse"  # opt-in frequency-preserving carrier
+    joint_embedding: str = "sequential"  # opt-in joint payload/pilot minimum-norm projection
 
     def validated(self) -> "JILPQIMConfig":
         if self.step <= 0 or self.pilot_step <= 0:
@@ -71,6 +72,13 @@ class JILPQIMConfig:
             not self.use_integer_lattice_closure or self.projection_mode != "minimum_distortion"
         ):
             raise ValueError("sparse Hartley carrier requires minimum-distortion integer closure")
+        if self.joint_embedding not in {"sequential", "orthogonal_joint"}:
+            raise ValueError("joint_embedding must be sequential or orthogonal_joint")
+        if self.joint_embedding == "orthogonal_joint" and (
+            self.hartley_support == 0 or not self.enable_pilots or
+            self.projection_mode != "minimum_distortion" or not self.use_integer_lattice_closure
+        ):
+            raise ValueError("orthogonal_joint requires sparse Hartley carrier, pilots and integer closure")
         if self.use_second_carrier:
             raise ValueError("the released repair-free proposal uses one payload carrier")
         return self
@@ -87,6 +95,8 @@ class JILPQIMConfig:
             values.pop("hartley_mix")
         if self.hartley_support == 0:
             values.pop("hartley_support")
+        if self.joint_embedding == "sequential":
+            values.pop("joint_embedding")
         if self.hartley_carrier_mode == "sparse":
             values.pop("hartley_carrier_mode")
         return values
