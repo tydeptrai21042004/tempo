@@ -1,0 +1,60 @@
+{
+  "protocol": "sorted selected BMP: first N for development, remaining held out",
+  "calibration_policy": "no final-test hosts or attacks used for parameter selection",
+  "development": [
+    {
+      "name": "host_001_Girl.bmp",
+      "sha256": "9c4926f1575c22892f8be360c0101225a2a95652edaf7c362b7c16178ca4db56"
+    },
+    {
+      "name": "host_002_airplane.bmp",
+      "sha256": "dcf8f044801c0d9caca8e1c6a25510a5c1ddce261db72fffbf5d86d528a43add"
+    },
+    {
+      "name": "host_003_athens.bmp",
+      "sha256": "492c8a2f29bd1f19f4563d1b420ef455dba6e602a8dcdf00830eec922d326b76"
+    }
+  ],
+  "test": [
+    {
+      "name": "host_004_baboon.bmp",
+      "sha256": "aca7487f3d3907d480a76c657c8e1a36bf301db5765bf7e8c3d66d474d503875"
+    },
+    {
+      "name": "host_005_butfly.bmp",
+      "sha256": "fe5abb1ea0b30c5bd00f89d9974db47529a1c439c0085c3207e1598c5ee2baba"
+    },
+    {
+      "name": "host_006_house.bmp",
+      "sha256": "f1eb6bc979f5fa44471f2bc2fb2422ad8f8f57803d7d1cdd803dc01effbe25f1"
+    },
+    {
+      "name": "host_007_manhatan.bmp",
+      "sha256": "62bccdb0b75516a80da82dade176701a59094b16d80e5c223510d0b3fc924950"
+    },
+    {
+      "name": "host_008_milkdrop.bmp",
+      "sha256": "b0a4c928836cdb116ea3bb23cd4d34141ebb2cfb87cbd487b20a7f984c0ff1ec"
+    },
+    {
+      "name": "host_009_pepper.bmp",
+      "sha256": "53d9c421dc1e5be18fa01bb18252fb8997663a1e340780e0cecd045240d6eafc"
+    },
+    {
+      "name": "host_010_safari.bmp",
+      "sha256": "2e285d19c0a48dac8c266e7699eaacf1f074050ede8d371bf48942ba0ed79a75"
+    },
+    {
+      "name": "host_011_sailboat.bmp",
+      "sha256": "441214b6f76a31234d21013e25f5c35dcc4181ddf71e8651631e64b146875503"
+    },
+    {
+      "name": "host_012_tiffany.bmp",
+      "sha256": "a36ceb8bc5d2b3f92911ea3d363e594e52ffc6b1397edfae3f1a1559ecd0d831"
+    }
+  ],
+  "split_sizes": {
+    "development": 3,
+    "test": 9
+  }
+}

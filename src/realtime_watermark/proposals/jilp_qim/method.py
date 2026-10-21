@@ -22,6 +22,7 @@ from .engine import _field_rgb as _field_rgb_kernel, _qim_margin_reliability as 
 from .config import DEFAULT_CONFIG, JILPQIMConfig
 from .sparse_hartley_engine import sparse_carrier,sparse_leverage,embed_sparse,extract_sparse,extract_sparse_conf
 from .joint_hartley_engine import embed_sparse_joint
+from .joint_dct_center_engine import embed_dense_center_joint
 from .hartley_carrier import payload_pair
 from .compiled_permutation import permute_arnold_exact, inverse_arnold_exact
 
@@ -179,6 +180,7 @@ def _build_key_params(
     scramble_payload: bool = True,
     phase_refinement: str = "off",
     certified_phase_pruning: bool = False,
+    phase_fast_threshold: float | None = None,
 ) -> dict[str, Any]:
     period = arnold_period(int(watermark_shape[0]))
     primary_frac = 0.85 if bool(use_second_carrier) else 1.0
@@ -242,6 +244,7 @@ def _build_key_params(
         "scramble_payload": bool(scramble_payload),
         "phase_refinement": str(phase_refinement),
         "certified_phase_pruning": bool(certified_phase_pruning),
+        "phase_fast_threshold": phase_fast_threshold,
         "structural_components": {
             "integer_lattice_closure": bool(use_integer_lattice_closure),
             "minimum_distortion_region": bool(str(projection_mode) == "minimum_distortion"),
@@ -881,6 +884,7 @@ def _best_candidate(img: np.ndarray, key_params: dict[str, Any], *, quick_accept
         translation_radius=translation_radius,
         phase_refinement=str(key_params.get("phase_refinement", "off")),
         certified_pruning=bool(key_params.get("certified_phase_pruning", False)),
+        phase_fast_threshold=key_params.get("phase_fast_threshold"),
     )
     # Translation is incorporated in the single rendered warp; do not apply it
     # a second time during payload decoding.
@@ -917,14 +921,20 @@ def embed_jilp_qim(
     hartley_support: int = 0,
     hartley_carrier_mode: str = "sparse",
     joint_embedding: str = "sequential",
+    phase_fast_threshold: float | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    if joint_embedding not in ("sequential", "orthogonal_joint"):
+    if joint_embedding not in ("sequential", "orthogonal_joint", "orthogonal_joint_center"):
         raise ValueError("unsupported joint_embedding")
     if joint_embedding == "orthogonal_joint" and (
         int(hartley_support) == 0 or not enable_pilots or not use_integer_lattice_closure or
         projection_mode != "minimum_distortion"
     ):
         raise ValueError("orthogonal_joint requires sparse Hartley payload, pilots and integer closure")
+    if joint_embedding == "orthogonal_joint_center" and (
+        int(hartley_support) != 0 or not enable_pilots or not use_integer_lattice_closure or
+        projection_mode != "center_qim"
+    ):
+        raise ValueError("orthogonal_joint_center requires dense center-QIM and integer closure")
     if hartley_carrier_mode not in ("sparse", "frequency_preserving"):
         raise ValueError("invalid hartley_carrier_mode")
     if hartley_carrier_mode != "sparse" and (int(hartley_support) <= 0 or not float(hartley_mix) > 0):
@@ -964,6 +974,7 @@ def embed_jilp_qim(
         temporal_vote_mode=str(temporal_vote_mode), scramble_payload=bool(scramble_payload),
         phase_refinement=str(phase_refinement),
         certified_phase_pruning=bool(certified_phase_pruning),
+        phase_fast_threshold=phase_fast_threshold,
     )
     payload_indices, pilot_indices, pilot_bits, capacity, _h_crop, w_crop, candidate_pool_used = _make_content_adaptive_schedules(
         host, tuple(int(x) for x in wm.shape), seed=int(seed),
@@ -1034,7 +1045,7 @@ def embed_jilp_qim(
     # Hartley payload in one minimum-norm update. Unshared blocks retain the
     # original sparse QIM kernel, so no watermark or geometric attack branches
     # are introduced. Joint formulation is *opt-in* and independently ablated.
-    use_joint = (joint_embedding == "orthogonal_joint" and bool(enable_pilots) and len(pilot_indices)>0)
+    use_joint = (joint_embedding in {"orthogonal_joint", "orthogonal_joint_center"} and bool(enable_pilots) and len(pilot_indices)>0)
     pilot_only_indices = pilot_indices
     pilot_only_bits = pilot_bits
     joint_indices = np.empty(0,dtype=np.int32)
@@ -1086,19 +1097,38 @@ def embed_jilp_qim(
         if use_joint:
             params['joint_overlap_blocks']=int(len(joint_indices))
     elif bool(use_integer_lattice_closure):
-        kernel = (
-            _eng._embed_one_carrier_jilp
-            if str(projection_mode) == "minimum_distortion"
-            else _eng._embed_one_carrier_jilp_center
-        )
-        (
-            integer_updates, unresolved, corrected_blocks,
-            initial_parity_failures, initial_guard_failures, final_guard_failures,
-        ) = _call_with_realtime_thread_budget(
-            kernel,
-            out, payload_indices_exec, bits_exec, payload_ba, payload_bb, step1,
-            step1 * float(rho_frac), int(w_crop), BLOCK_SIZE, effective_eta
-        )
+        if use_joint and joint_embedding == "orthogonal_joint_center":
+            # Execute dense-center payload only on non-overlaps; jointly project
+            # payload and pilot QIM coordinates on their shared blocks.
+            ordinary = _call_with_realtime_thread_budget(
+                _eng._embed_one_carrier_jilp_center,
+                out, sparse_indices, sparse_bits, payload_ba, payload_bb, step1,
+                step1 * float(rho_frac), int(w_crop), BLOCK_SIZE, effective_eta,
+            )
+            combined = _call_with_realtime_thread_budget(
+                embed_dense_center_joint,
+                out, joint_indices, joint_bits, joint_pilot_bits,
+                payload_ba, payload_bb, _eng.PILOT_BA, _eng.PILOT_BB,
+                step1, float(params["step_pilot"]),
+                float(params["step_pilot"]) * float(params["pilot_rho_frac"]),
+                int(w_crop), effective_eta,
+            )
+            (integer_updates, unresolved, corrected_blocks,
+             initial_parity_failures, initial_guard_failures, final_guard_failures) = (
+                tuple(int(x) + int(y) for x, y in zip(ordinary, combined))
+            )
+            params["joint_overlap_blocks"] = int(len(joint_indices))
+        else:
+            kernel = (
+                _eng._embed_one_carrier_jilp
+                if str(projection_mode) == "minimum_distortion"
+                else _eng._embed_one_carrier_jilp_center
+            )
+            (integer_updates, unresolved, corrected_blocks,
+             initial_parity_failures, initial_guard_failures, final_guard_failures) = _call_with_realtime_thread_budget(
+                kernel, out, payload_indices_exec, bits_exec, payload_ba, payload_bb, step1,
+                step1 * float(rho_frac), int(w_crop), BLOCK_SIZE, effective_eta,
+            )
     else:
         kernel = (
             _eng._embed_one_carrier_md
@@ -1219,6 +1249,7 @@ def embed_proposal(
         scramble_payload=config.scramble_payload,
         phase_refinement=config.phase_refinement,
         certified_phase_pruning=config.certified_phase_pruning,
+        phase_fast_threshold=config.phase_fast_threshold,
         hartley_mix=config.hartley_mix,
         hartley_support=config.hartley_support,
         hartley_carrier_mode=config.hartley_carrier_mode,

@@ -1,0 +1,26 @@
+{
+  "config_hash": "9c06285ab6eb0ffa6099caa82181ad5ba44f20bf8f54b10c42852793b74d11da",
+  "parameters": {
+    "schema_version": "2.0",
+    "step": 17.78404328715303,
+    "rho_frac": 0.45,
+    "pilot_count": 128,
+    "pilot_step": 15.0,
+    "pilot_rho_frac": 0.49,
+    "eta": 0.07,
+    "candidate_pool_multiplier": 1.0,
+    "candidate_budget": null,
+    "use_second_carrier": false,
+    "pilot_schedule": "stratified",
+    "use_integer_lattice_closure": true,
+    "projection_mode": "center_qim",
+    "enable_pilots": true,
+    "enable_sync_search": true,
+    "payload_schedule_mode": "random",
+    "field_mode": "luminance",
+    "temporal_vote_mode": "hard",
+    "scramble_payload": true,
+    "phase_refinement": "selective",
+    "certified_phase_pruning": true
+  }
+}

@@ -32,6 +32,7 @@ class JILPQIMConfig:
     scramble_payload: bool = True
     phase_refinement: str = "off"
     certified_phase_pruning: bool = False
+    phase_fast_threshold: float | None = None  # experimental phase acceptance gate
     hartley_mix: float = 0.0  # experimental weighted-convolution payload carrier
     hartley_support: int = 0  # 0=original; even 2-56=compute-limited convolution carrier
     hartley_carrier_mode: str = "sparse"  # opt-in frequency-preserving carrier
@@ -58,6 +59,8 @@ class JILPQIMConfig:
             raise ValueError("unsupported field_mode")
         if self.temporal_vote_mode not in {"hard", "confidence_weighted"}:
             raise ValueError("unsupported temporal_vote_mode")
+        if self.phase_fast_threshold is not None and not (0.0 <= float(self.phase_fast_threshold) <= 1.0):
+            raise ValueError("phase_fast_threshold must lie in [0,1]")
         if self.phase_refinement not in {"off", "selective"}:
             raise ValueError("phase_refinement must be off or selective")
         if not (0.0 <= self.hartley_mix <= 1.0):
@@ -72,13 +75,18 @@ class JILPQIMConfig:
             not self.use_integer_lattice_closure or self.projection_mode != "minimum_distortion"
         ):
             raise ValueError("sparse Hartley carrier requires minimum-distortion integer closure")
-        if self.joint_embedding not in {"sequential", "orthogonal_joint"}:
-            raise ValueError("joint_embedding must be sequential or orthogonal_joint")
+        if self.joint_embedding not in {"sequential", "orthogonal_joint", "orthogonal_joint_center"}:
+            raise ValueError("unsupported joint_embedding")
         if self.joint_embedding == "orthogonal_joint" and (
             self.hartley_support == 0 or not self.enable_pilots or
             self.projection_mode != "minimum_distortion" or not self.use_integer_lattice_closure
         ):
             raise ValueError("orthogonal_joint requires sparse Hartley carrier, pilots and integer closure")
+        if self.joint_embedding == "orthogonal_joint_center" and (
+            self.hartley_support != 0 or not self.enable_pilots or
+            self.projection_mode != "center_qim" or not self.use_integer_lattice_closure
+        ):
+            raise ValueError("orthogonal_joint_center requires dense center-QIM, pilots and integer closure")
         if self.use_second_carrier:
             raise ValueError("the released repair-free proposal uses one payload carrier")
         return self
@@ -91,6 +99,8 @@ class JILPQIMConfig:
             values.pop("phase_refinement")
         if not self.certified_phase_pruning:
             values.pop("certified_phase_pruning")
+        if self.phase_fast_threshold is None:
+            values.pop("phase_fast_threshold")
         if self.hartley_mix == 0.0:
             values.pop("hartley_mix")
         if self.hartley_support == 0:

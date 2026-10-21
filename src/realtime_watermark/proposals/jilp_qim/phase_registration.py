@@ -193,6 +193,7 @@ def register_sparse_phase(
     img, indices, bits, step: float, eta: float,
     *, quick_accept: float = 0.72, translation_radius: int = 8,
     phase_refinement: str = "off", certified_pruning: bool = False,
+    phase_fast_threshold: float | None = None,
 ):
     """Finite-grid phase registration, preserving a single pilot fast path.
 
@@ -211,6 +212,8 @@ def register_sparse_phase(
     # refinement + pruning configuration; it is not a proof of equivalence for
     # arbitrary attacks. Preserve the original 0.80 gate for all other modes.
     phase_gate = 0.65 if (phase_refinement == "selective" and certified_pruning) else 0.80
+    if phase_fast_threshold is not None:
+        phase_gate = float(phase_fast_threshold)
     certified_fast = raw_score >= max(phase_gate, 2.0 * float(quick_accept) - 1.0)
     if certified_fast:
         return img, {
