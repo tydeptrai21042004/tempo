@@ -1,0 +1,19 @@
+--- a/src/realtime_watermark/proposals/jilp_qim/phase_registration.py
++++ b/src/realtime_watermark/proposals/jilp_qim/phase_registration.py
+@@ -206,10 +206,12 @@
+     basis = (0.5 * (_eng.PILOT_BA - _eng.PILOT_BB)).astype(np.float32)
+     identity = (0, 0.0, 0.0, 0, 0)
+     raw_score = float(_identity_phase_rgb(img, indices, bits, basis, float(step), float(eta)))
+-    # Preserve a single fast-path decision; translate legacy accuracy threshold
+-    # into a conservative phase coherence threshold. The phase score itself is
+-    # the common mathematical objective for all candidates.
+-    certified_fast = raw_score >= max(0.80, 2.0 * float(quick_accept) - 1.0)
++    # One attack-agnostic phase-coherence gate. The 0.65 threshold is an
++    # empirical speed/robustness operating point for the validated selective
++    # refinement + pruning configuration; it is not a proof of equivalence for
++    # arbitrary attacks. Preserve the original 0.80 gate for all other modes.
++    phase_gate = 0.65 if (phase_refinement == "selective" and certified_pruning) else 0.80
++    certified_fast = raw_score >= max(phase_gate, 2.0 * float(quick_accept) - 1.0)
+     if certified_fast:
+         return img, {
+             "path": "raw_fast_jilp", "candidate": "identity", "score": (raw_score+1)/2,
