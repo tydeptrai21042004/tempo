@@ -21,14 +21,14 @@ def test_activation_keeps_every_other_tuned_parameter_and_is_idempotent(tmp_path
     original.save(selected)
     report = activate(selected, control, audit)
     new = JILPQIMConfig.load(selected)
-    assert new.projection_mode == "minimum_distortion"
-    assert new.rho_frac == 0.45
+    assert new.projection_mode == original.projection_mode
+    assert new.rho_frac == original.rho_frac
     assert new.certified_phase_pruning is True
-    assert new.phase_refinement == "off"
+    assert new.phase_refinement == "selective"
     assert new.pilot_count == 128 and new.field_mode == "luminance"
     assert JILPQIMConfig.load(control) == original
-    assert new == replace(original, projection_mode="minimum_distortion",
-                          rho_frac=0.45, certified_phase_pruning=True)
+    assert new == replace(original, certified_phase_pruning=True,
+                          phase_refinement="selective")
     assert report["original_selected_sha256"] == original.sha256()
     assert report["refined_selected_sha256"] == new.sha256()
     assert json.loads(audit.read_text())["status"] == "refined_proposal_selected"

@@ -53,7 +53,7 @@ def attack_rgb(im, kind):
 
 def params_for(name):
     data = DEFAULT_CONFIG.to_dict()
-    if name in ('lower_step','candidate'):
+    if name == 'lower_step':
         data['step'] = 17.0
     if name == 'candidate':
         data['phase_refinement'] = 'selective'

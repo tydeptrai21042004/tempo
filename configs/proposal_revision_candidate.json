@@ -1,8 +1,8 @@
 {
-  "config_hash": "818afe1a5db1c68fdba3c4db55029670f0bc7f0b4796eb8150e4dd7968632fca",
+  "config_hash": "6d95f5e39ce922ef1f7a32a7922b85ad2c9ce23cf037119f96c1883b499361eb",
   "parameters": {
     "schema_version": "2.0",
-    "step": 17.0,
+    "step": 17.78404328715303,
     "rho_frac": 0.45,
     "pilot_count": 96,
     "pilot_step": 15.0,

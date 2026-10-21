@@ -138,7 +138,7 @@ def host_bootstrap(pairs, metric, *, seed=2026, samples=1000):
 def base_args(parser):
     parser.add_argument('--host-dir', default=str(ROOT/'data/user_dataset/host'))
     parser.add_argument('--watermark-dir', default=str(ROOT/'data/user_dataset/watermark'))
-    parser.add_argument('--config', default=str(ROOT/'configs/proposal_revision_candidate.json'))
+    parser.add_argument('--config', default=str(ROOT/'configs/proposal_minimal_refined.json'))
     parser.add_argument('--out-dir', required=True)
     parser.add_argument('--seed', type=int, default=2026)
     parser.add_argument('--max-hosts', type=int, default=0)

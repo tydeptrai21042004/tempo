@@ -71,6 +71,6 @@ def run(a):
 def parser():
     p=base_args(argparse.ArgumentParser(description=__doc__))
     p.add_argument('--original-config',default=str(ROOT/'configs/proposal_frozen.json'))
-    p.add_argument('--refined-config',default=str(ROOT/'configs/proposal_revision_candidate.json'))
+    p.add_argument('--refined-config',default=str(ROOT/'configs/proposal_minimal_refined.json'))
     return p
 if __name__=='__main__':run(parser().parse_args())

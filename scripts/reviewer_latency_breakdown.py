@@ -85,7 +85,7 @@ def run(a):
 def parser():
     p=base_args(argparse.ArgumentParser(description=__doc__))
     p.add_argument('--original-config',default=str(ROOT/'configs/proposal_frozen.json'))
-    p.add_argument('--refined-config',default=str(ROOT/'configs/proposal_revision_candidate.json'))
+    p.add_argument('--refined-config',default=str(ROOT/'configs/proposal_minimal_refined.json'))
     p.add_argument('--repeats',type=int,default=8)
     p.add_argument('--profile',action='store_true')
     return p

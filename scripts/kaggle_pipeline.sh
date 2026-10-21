@@ -40,9 +40,10 @@ WM_SIZE="${WM_SIZE:-64}"
 HP_HOSTS="${HP_HOSTS:-3}"
 VIDEO_CODEC="${VIDEO_CODEC:-mp4v}"
 VIDEO_INPUT="${VIDEO_INPUT:-}"
-# Enable the carefully bounded mathematical TEMPO revision by default.
-# Set TEMPO_MATH_REFINEMENT=0 for a faithful original-method control run.
-TEMPO_MATH_REFINEMENT="${TEMPO_MATH_REFINEMENT:-1}"
+# Default is the *unmodified* development-selected method. Opt in to the
+# certified phase refinement with TEMPO_MATH_REFINEMENT=1, retaining the
+# original configuration and its SHA-256 separately for comparison.
+TEMPO_MATH_REFINEMENT="${TEMPO_MATH_REFINEMENT:-0}"
 if [[ "$TEMPO_MATH_REFINEMENT" != "0" && "$TEMPO_MATH_REFINEMENT" != "1" ]]; then
   echo "TEMPO_MATH_REFINEMENT must be 0 or 1" >&2; exit 2
 fi
@@ -100,7 +101,7 @@ if [[ "$RESUME_FROM_VIDEO" == "1" ]]; then
 else
 stage "1. VERIFY SOURCE"
 "$PYTHON_BIN" scripts/verify_source_manifest.py \
-  --allow-missing --report-dir "$REPORT_ROOT/manifest"
+  --report-dir "$REPORT_ROOT/manifest"
 
 stage "2. SELECT ALL BMP HOSTS EXCEPT LENA AND BOTH PNG WATERMARKS"
 "$PYTHON_BIN" scripts/select_kaggle_dataset.py \
@@ -154,7 +155,7 @@ TEST_HOST_DIR="$REPORT_ROOT/holdout/test"
 # Only the proposed method's active config is changed; baseline algorithms
 # and all subsequent held-out image/video test protocols are unmodified.
 if [[ "$TEMPO_MATH_REFINEMENT" == "1" ]]; then
-  stage "4B. ACTIVATE MINIMUM-DISTORTION QIM + CERTIFIED SPARSE PHASE SEARCH"
+  stage "4B. ACTIVATE CERTIFIED QIM-PHASE PRUNING + LOCAL REFINEMENT"
   "$PYTHON_BIN" scripts/apply_math_refinement.py \
     --selected-config "$SELECTED_CONFIG" \
     --original-copy "$REPORT_ROOT/configs/proposal_original_selected.json" \

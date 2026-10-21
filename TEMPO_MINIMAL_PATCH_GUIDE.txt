@@ -1,0 +1,51 @@
+TEMPO minimal mathematical / FPS revision — 2026-10-21
+====================================================
+
+Recommended source config:
+  configs/proposal_minimal_refined.json
+Exact control:
+  configs/proposal_frozen.json
+Optional exploratory earlier step-17 proposal:
+  configs/proposal_step17_exploratory.json
+
+Method changes: only pilot synchronization search is different from control.
+The proposed method still uses the same 8x8 orthogonal DCT carriers, 4096-bit
+binary payload, QIM projection, minimum-energy RGB update, integer correction,
+keyed schedule and blind extraction. There are no attack-name-based branches in
+the proposal method. The two refinements are mathematically bounded phase
+search pruning and continuous local optimization of the same phase objective.
+The latter is an empirical refinement, not a proof of affine invariance.
+
+Repair: compiled_permutation.py was absent in the provided ZIP. Its replacement
+caches the *exact* Arnold coordinate permutation, checked against the original
+core.arnold_transform for multiple sizes and iteration counts. Source checksums
+are regenerated only for the corrected deliverable; original missing-file
+hashes cannot be authenticated from the supplied ZIP.
+
+Test:
+  python -m pip install -e '.[dev]'
+  python scripts/verify_source_manifest.py
+  python -m pytest -q
+
+Quick paired CPU experiment, both watermark files, 4096 bits:
+  python scripts/reproduce_tempo_minimal.py --out-dir results/minimal --max-hosts 2 --paced-frames 24
+
+All available image hosts (still-host JPEG70 loop, NOT real-video evidence):
+  python scripts/reproduce_tempo_minimal.py --out-dir results/full --max-hosts 12 --paced-frames 120
+
+Reviewer expanded experiments already included in this repository:
+  python scripts/reviewer_latency_breakdown.py --out-dir results/latency --max-hosts 2 --repeats 3
+  python scripts/method_revision_study.py --help
+  bash scripts/kaggle_pipeline.sh quick
+
+Kaggle pipeline runs unmodified selected method by default; set
+TEMPO_MATH_REFINEMENT=1 to activate this sync-only revision (it preserves an
+unaltered copy of the development-selected configuration).  Run original and
+revision separately with the same dataset, attacks and conditions.
+
+Do not claim guaranteed 60 FPS or 90-120+ FPS from kernel timings. JPEG70 and
+both watermark decode must be included; for a real-time claim, test a separate
+independently captured video, causal producer / bounded queue, p95/p99 deadline,
+on-time ratio and dropped frames. Prior exploratory data are in the earlier
+TEMPO_Test_Evidence_and_Minimal_Revision_Plan.zip, not substituted into this
+release as newly measured results.

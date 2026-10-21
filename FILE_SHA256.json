@@ -1,6 +1,6 @@
 {
-  "src/realtime_watermark/proposals/jilp_qim/config.py": "2f2f102a3b46d4ea6a5374b8db46451ca4a6666593b7df5690fa87c440cd2eb9",
-  "src/realtime_watermark/proposals/jilp_qim/method.py": "5f0f944509d7a171b8761fadaa84fb76af3409904c5157d6e6071b4f643285d5",
+  "src/realtime_watermark/proposals/jilp_qim/config.py": "90b185694d24abb1987d9e50cd6be3c2d0165c52bc5ce8bad983aec36a301fe3",
+  "src/realtime_watermark/proposals/jilp_qim/method.py": "3506f8d0978486cc998bd44e540433da198fc40d165a892cdd3b7e05382f7dba",
   "src/realtime_watermark/proposals/jilp_qim/hartley_carrier.py": "5d7d80de1c5578c28f9c805458275d90881ff323eaa42e101bed451cd8ea3a92",
   "src/realtime_watermark/proposals/jilp_qim/sparse_hartley_engine.py": "828b9b9ae0f78e73d09f857ece3818a6191b5dcc6f04dfe7c25aa762c5c18b89",
   "tests/test_hartley_convolution_carrier.py": "626dc6cd4fe74789c6a5051c0b3fd46dea12a82278bb7b10d94e30ea7f45e080",
@@ -9,5 +9,12 @@
   "scripts/frequency_preserving_hartley_compare.py": "40909645a35f968a8d7ddd3aa9215b4ee7e4ba5ddfab006a546254d33d3f1354",
   "configs/hartley_frequency_preserving48_candidate.json": "640f901c7dae44a408d7b347e0185fa2f74d126007cf2ff73d428fc006bd088f",
   "ORIGINAL_TO_NEW_SOURCE.diff": "332fb8ad600227446eceae3c9885774f5b1aa7e37756e03c8d3b6697dba0be24",
-  "HARTLEY_FREQUENCY_PRESERVING_PATCH_README.md": "50c4bc031199fdd50756fd4a3b182b0d54a5970f68e7837fc61d0c033811d3cd"
+  "HARTLEY_FREQUENCY_PRESERVING_PATCH_README.md": "50c4bc031199fdd50756fd4a3b182b0d54a5970f68e7837fc61d0c033811d3cd",
+  "src/realtime_watermark/proposals/jilp_qim/compiled_permutation.py": "f34cf51360901b2f369b97ca6f22f13307eb65abecb7be89799712621794ba88",
+  "src/realtime_watermark/proposals/jilp_qim/phase_registration.py": "bd850e2e434b3f9bfac5542ca05c8485947a7fc42d8b0282aaa008f434f7dd5b",
+  "scripts/apply_math_refinement.py": "e027453860a54f5d1114a3ab813dfe33f02ecb65102845fc4cee79c3de05716b",
+  "scripts/kaggle_pipeline.sh": "e9ae6e0a9cafb34c7949f97b3501fb5d4a9e0e5f5da263f0813e9c8f721d2b27",
+  "scripts/reproduce_tempo_minimal.py": "8858b1490a351f3a6a68bd6e4180a777f1a186a23eeb34debf4c8b64acc3343c",
+  "tests/test_minimal_refined_release.py": "39b4ca22e977d82141dcaf640f41a5f4ef7c29a887fedcef6194b2776fe3b5c9",
+  "configs/proposal_minimal_refined.json": "b61e8c3521c2b20347e5339b210e629574915368114c91688059398f83b83f84"
 }

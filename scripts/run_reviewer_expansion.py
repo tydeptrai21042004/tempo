@@ -108,7 +108,7 @@ def parser():
     p.add_argument('--no-zip',action='store_true',help='Do not automatically ZIP experiment output logs and CSV files')
     p.add_argument('--host-dir',default=str(ROOT/'data/user_dataset/host'))
     p.add_argument('--watermark-dir',default=str(ROOT/'data/user_dataset/watermark'))
-    p.add_argument('--config',default=str(ROOT/'configs/proposal_revision_candidate.json'))
+    p.add_argument('--config',default=str(ROOT/'configs/proposal_minimal_refined.json'))
     p.add_argument('--development-dir',default=None,help='Separate development-only image folder')
     p.add_argument('--external-host-dir',default=None,help='Actually new images, not repository host duplicates')
     p.add_argument('--video',default=None,help='Actual video input .mp4')
