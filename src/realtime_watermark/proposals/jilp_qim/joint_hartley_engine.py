@@ -14,12 +14,12 @@ from __future__ import annotations
 import numpy as np
 from numba import prange
 from ...core import njit
-from .engine import _field_rgb, _project_qim_margin
+from .engine import _field_rgb, _project_qim_margin, _project_qim_center
 
 @njit(cache=True, fastmath=True, parallel=True)
 def embed_sparse_joint(out, indices, payload_bits, pilot_bits, ci, cj, coeff,
                        pilot_basis, payload_basis, rank_t, rank_ch, rank_s,
-                       step, rho, pilot_step, pilot_rho, w_crop, eta):
+                       step, rho, pilot_step, pilot_rho, w_crop, eta, center_mode=False):
     """Fuse joint updates on shared pilot/payload blocks (no other block writes)."""
     n = len(indices)
     bc = w_crop // 8
@@ -41,7 +41,8 @@ def embed_sparse_joint(out, indices, payload_bits, pilot_bits, ci, cj, coeff,
                 vs+=f*pilot_basis[i,j]
         for t in range(len(ci)):
             vp+=_field_rgb(out[r0+ci[t],c0+cj[t],0],out[r0+ci[t],c0+cj[t],1],out[r0+ci[t],c0+cj[t],2],eta)*coeff[t]
-        dp=_project_qim_margin(vp,step,int(payload_bits[k]),rho)-vp
+        dp=(_project_qim_center(vp,step,int(payload_bits[k])) if center_mode else
+            _project_qim_margin(vp,step,int(payload_bits[k]),rho))-vp
         ds=_project_qim_margin(vs,pilot_step,int(pilot_bits[k]),pilot_rho)-vs
         if abs(dp)>1e-9 or abs(ds)>1e-9:
             # Full 8x8 write required by the dense symmetric pilot, but only

@@ -72,10 +72,13 @@ class JILPQIMConfig:
         if self.hartley_carrier_mode != "sparse" and (self.hartley_support == 0 or self.hartley_mix <= 0):
             raise ValueError("frequency_preserving requires positive hartley_mix and sparse support")
         if self.hartley_support > 0 and (
-            not self.use_integer_lattice_closure or self.projection_mode != "minimum_distortion"
+            not self.use_integer_lattice_closure or
+            (self.projection_mode != "minimum_distortion" and
+             not (self.projection_mode == "center_qim" and
+                  self.joint_embedding == "orthogonal_joint_sparse_center"))
         ):
-            raise ValueError("sparse Hartley carrier requires minimum-distortion integer closure")
-        if self.joint_embedding not in {"sequential", "orthogonal_joint", "orthogonal_joint_center"}:
+            raise ValueError("sparse Hartley carrier requires minimum-distortion integer closure or the sparse joint-center formulation")
+        if self.joint_embedding not in {"sequential", "orthogonal_joint", "orthogonal_joint_center", "orthogonal_joint_sparse_center"}:
             raise ValueError("unsupported joint_embedding")
         if self.joint_embedding == "orthogonal_joint" and (
             self.hartley_support == 0 or not self.enable_pilots or
@@ -87,6 +90,11 @@ class JILPQIMConfig:
             self.projection_mode != "center_qim" or not self.use_integer_lattice_closure
         ):
             raise ValueError("orthogonal_joint_center requires dense center-QIM, pilots and integer closure")
+        if self.joint_embedding == "orthogonal_joint_sparse_center" and (
+            self.hartley_support == 0 or not self.enable_pilots or
+            self.projection_mode != "center_qim" or not self.use_integer_lattice_closure
+        ):
+            raise ValueError("orthogonal_joint_sparse_center requires sparse Hartley carrier, pilots, center-QIM and integer closure")
         if self.use_second_carrier:
             raise ValueError("the released repair-free proposal uses one payload carrier")
         return self

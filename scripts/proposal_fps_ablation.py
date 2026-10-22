@@ -51,6 +51,12 @@ VARIANTS={
     'gate065_pilot096':('interaction: gate 0.65 + 96 pilots',{'phase_fast_threshold':0.65,'pilot_count':96}),
     'gate065_pilot064':('interaction: gate 0.65 + 64 pilots',{'phase_fast_threshold':0.65,'pilot_count':64}),
     'joint_pilot096':('interaction: joint DCT + 96 pilots',{'joint_embedding':'orthogonal_joint_center','pilot_count':96}),
+    # Convolution-derived, frequency-regularized, exactly orthogonal sparse
+    # payload carrier + joint center-QIM. These change the embedding method.
+    'sparse_center24':('24-tap sparse Hartley joint center-QIM',{'hartley_mix':0.25,'hartley_support':24,'hartley_carrier_mode':'frequency_preserving','joint_embedding':'orthogonal_joint_sparse_center'}),
+    'sparse_center32':('32-tap sparse Hartley joint center-QIM',{'hartley_mix':0.25,'hartley_support':32,'hartley_carrier_mode':'frequency_preserving','joint_embedding':'orthogonal_joint_sparse_center'}),
+    'sparse_center48':('48-tap sparse Hartley joint center-QIM',{'hartley_mix':0.25,'hartley_support':48,'hartley_carrier_mode':'frequency_preserving','joint_embedding':'orthogonal_joint_sparse_center'}),
+    'sparse_center56':('56-tap sparse Hartley joint center-QIM',{'hartley_mix':0.25,'hartley_support':56,'hartley_carrier_mode':'frequency_preserving','joint_embedding':'orthogonal_joint_sparse_center'}),
 }
 GROUPS={
     'phase':('baseline','gate_080','gate_070','gate_065','gate_055','no_pruning','no_refinement','no_phase_search_acceleration'),
@@ -58,6 +64,7 @@ GROUPS={
     'embedding':('baseline','joint_center','projection_guarded','closure_disabled','field_opponent','field_luminance'),
     'interaction':('baseline','joint_center_gate065','gate065_pilot096','gate065_pilot064','joint_pilot096'),
 }
+GROUPS['method_fps']=('baseline','joint_center_gate065','sparse_center24','sparse_center32','sparse_center48','sparse_center56')
 GROUPS['all']=tuple(VARIANTS)
 GROUPS['quick']=('baseline','gate_080','gate_065','joint_center','joint_center_gate065','pilot_096')
 

@@ -923,7 +923,7 @@ def embed_jilp_qim(
     joint_embedding: str = "sequential",
     phase_fast_threshold: float | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    if joint_embedding not in ("sequential", "orthogonal_joint", "orthogonal_joint_center"):
+    if joint_embedding not in ("sequential", "orthogonal_joint", "orthogonal_joint_center", "orthogonal_joint_sparse_center"):
         raise ValueError("unsupported joint_embedding")
     if joint_embedding == "orthogonal_joint" and (
         int(hartley_support) == 0 or not enable_pilots or not use_integer_lattice_closure or
@@ -935,6 +935,11 @@ def embed_jilp_qim(
         projection_mode != "center_qim"
     ):
         raise ValueError("orthogonal_joint_center requires dense center-QIM and integer closure")
+    if joint_embedding == "orthogonal_joint_sparse_center" and (
+        int(hartley_support) <= 0 or not enable_pilots or not use_integer_lattice_closure or
+        projection_mode != "center_qim"
+    ):
+        raise ValueError("orthogonal_joint_sparse_center requires sparse carrier, pilots and center-QIM")
     if hartley_carrier_mode not in ("sparse", "frequency_preserving"):
         raise ValueError("invalid hartley_carrier_mode")
     if hartley_carrier_mode != "sparse" and (int(hartley_support) <= 0 or not float(hartley_mix) > 0):
@@ -1045,7 +1050,7 @@ def embed_jilp_qim(
     # Hartley payload in one minimum-norm update. Unshared blocks retain the
     # original sparse QIM kernel, so no watermark or geometric attack branches
     # are introduced. Joint formulation is *opt-in* and independently ablated.
-    use_joint = (joint_embedding in {"orthogonal_joint", "orthogonal_joint_center"} and bool(enable_pilots) and len(pilot_indices)>0)
+    use_joint = (joint_embedding in {"orthogonal_joint", "orthogonal_joint_center", "orthogonal_joint_sparse_center"} and bool(enable_pilots) and len(pilot_indices)>0)
     pilot_only_indices = pilot_indices
     pilot_only_bits = pilot_bits
     joint_indices = np.empty(0,dtype=np.int32)
@@ -1075,13 +1080,14 @@ def embed_jilp_qim(
         )
 
     if int(hartley_support)>0:
-        if not bool(use_integer_lattice_closure) or str(projection_mode) != 'minimum_distortion':
-            raise ValueError('sparse carrier requires minimum-distortion integer closure')
+        if not bool(use_integer_lattice_closure) or (str(projection_mode) != 'minimum_distortion' and joint_embedding != 'orthogonal_joint_sparse_center'):
+            raise ValueError('sparse carrier requires compatible integer closure')
         ci,cj,cc=sparse_carrier(float(hartley_mix),int(hartley_support),hartley_carrier_mode)
         rt,rc,rs=sparse_leverage(float(hartley_mix),int(hartley_support),effective_eta,hartley_carrier_mode)
+        center_sparse = (joint_embedding == "orthogonal_joint_sparse_center")
         stats = _call_with_realtime_thread_budget(
             embed_sparse,out,sparse_indices,sparse_bits,ci,cj,cc,rt,rc,rs,
-            step1,step1*float(rho_frac),int(w_crop),effective_eta)
+            step1,step1*float(rho_frac),int(w_crop),effective_eta,center_sparse)
         if use_joint and len(joint_indices):
             pilot_basis=0.5*(_eng.PILOT_BA.astype(np.float64)-_eng.PILOT_BB.astype(np.float64))
             dense_payload_basis=np.zeros((8,8),dtype=np.float64)
@@ -1090,7 +1096,7 @@ def embed_jilp_qim(
                 embed_sparse_joint,out,joint_indices,joint_bits,joint_pilot_bits,
                 ci,cj,cc,pilot_basis,dense_payload_basis,rt,rc,rs,step1,step1*float(rho_frac),
                 float(params['step_pilot']),float(params['step_pilot'])*float(params['pilot_rho_frac']),
-                int(w_crop),effective_eta)
+                int(w_crop),effective_eta,center_sparse)
             stats=tuple(int(x)+int(y) for x,y in zip(stats,joint_stats))
         (integer_updates,unresolved,corrected_blocks,initial_parity_failures,
          initial_guard_failures,final_guard_failures)=stats

@@ -9,7 +9,7 @@ import numpy as np
 from numba import prange
 from ...core import njit,dct_basis
 from .hartley_carrier import payload_pair
-from .engine import _field_rgb, _project_qim_margin, _qim_margin_reliability
+from .engine import _field_rgb, _project_qim_margin, _project_qim_center, _qim_margin_reliability
 
 def _spectral_preserving_projection(q_convolution, selected_pairs):
     """Once-per-key constrained least squares in the antisymmetric 8x8 space.
@@ -95,7 +95,7 @@ def sparse_leverage(alpha, support, eta, mode: str='sparse'):
             np.array([v[2] for v in ranks],dtype=np.float64))
 
 @njit(cache=True,fastmath=True,parallel=True)
-def embed_sparse(out,indices,bits,ci,cj,coeff,rank_t,rank_ch,rank_s,step,rho,w_crop,eta):
+def embed_sparse(out,indices,bits,ci,cj,coeff,rank_t,rank_ch,rank_s,step,rho,w_crop,eta,center_mode=False):
     n=len(indices); bc=w_crop//8
     g0=0.299+eta; g1=0.587-0.5*eta;g2=0.114-0.5*eta
     gg=g0*g0+g1*g1+g2*g2
@@ -112,7 +112,8 @@ def embed_sparse(out,indices,bits,ci,cj,coeff,rank_t,rank_ch,rank_s,step,rho,w_c
             r=r0+ci[t];c=c0+cj[t]
             f=_field_rgb(out[r,c,0],out[r,c,1],out[r,c,2],eta)
             v+=f*coeff[t]
-        target=_project_qim_margin(v,step,int(bits[k]),rho)
+        target=(_project_qim_center(v,step,int(bits[k])) if center_mode else
+                _project_qim_margin(v,step,int(bits[k]),rho))
         delta=target-v
         if abs(delta)>1e-9:
             va=0.0
