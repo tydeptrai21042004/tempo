@@ -90,6 +90,13 @@ def adapt_skimage_gaussian(module) -> bool:
         if 'multichannel' in kwargs:
             multic=kwargs.pop('multichannel')
             kwargs.setdefault('channel_axis', -1 if multic else None)
+        elif 'channel_axis' not in kwargs:
+            # Older skimage releases auto-recognized last-axis RGB/RGBA when
+            # the official source omitted multichannel (e.g., glass_blur).
+            # Set it explicitly with current skimage; keep grayscale 2-D.
+            arr = np.asarray(image)
+            if arr.ndim == 3 and arr.shape[-1] in (3, 4):
+                kwargs['channel_axis'] = -1
         return gaussian(image,*args,**kwargs)
     module.gaussian=compatible_gaussian
     return True
@@ -127,6 +134,11 @@ def import_official(path: Path, repo: Path):
     finally:
         sys.path[:]=old
         sys.dont_write_bytecode=old_bytecode
+    # The official source imports skimage.filters.gaussian into its module
+    # namespace and still calls it with multichannel=True. Recent versions
+    # accept channel_axis=-1 instead. Adapt the bound function *only in the
+    # loaded module*, without editing or dirtying the attested upstream Git.
+    module._tempo_skimage_gaussian_compat = adapt_skimage_gaussian(module)
     return module
 
 
@@ -190,6 +202,35 @@ def trial_seed(seed, host, watermark, method, attack, severity):
     return int.from_bytes(hashlib.sha256(blob).digest()[:4], 'big')
 
 
+def preflight_official(module, names, severities, sample_bgr, host_name,
+                       watermark_name, seed=2026, companion_repo=None):
+    """Check the upstream (attack, severity) pairs on the actual image shape.
+
+    Unsupported/invalid upstream outputs are *not* silently substituted by
+    TEMPO implementations. They are recorded as unavailable with their errors.
+    """
+    supported, unsupported = [], []
+    for name in names:
+        fn = getattr(module, name)
+        for severity in severities:
+            severity = int(severity)
+            try:
+                call_official(
+                    fn, sample_bgr, severity,
+                    seed=trial_seed(seed, host_name, watermark_name,
+                                    'preflight', name, severity),
+                    companion_repo=companion_repo,
+                )
+                supported.append((name, severity))
+            except Exception as exc:
+                reason = f'{type(exc).__name__}: {exc}'
+                unsupported.append({'attack': name, 'severity': severity,
+                                    'reason': reason})
+                print(f'UPSTREAM_UNSUPPORTED mmw::{name}::severity{severity}: {reason}',
+                      flush=True)
+    return supported, unsupported
+
+
 def main(args):
     if not 1 <= min(args.severities) <= max(args.severities) <= 5:
         raise ValueError('Official severity must be in 1..5')
@@ -220,17 +261,39 @@ def main(args):
     if args.watermark_limit:watermarks=watermarks[:args.watermark_limit]
     if not hosts or not watermarks:raise RuntimeError('Missing host BMPs or watermark PNGs')
     config=JILPQIMConfig.load(args.config)
-    # Fail closed on one canary result per declared corruption BEFORE method execution.
+    # Upstream corruptions are not all compatible with 512x512 images or
+    # current Python libraries. Check each condition and preserve diagnostics
+    # instead of aborting the entire official-source track at the first error.
+    out=args.out_dir;out.mkdir(parents=True,exist_ok=True)
     sample=np.asarray(Image.open(hosts[0]).convert('RGB'),dtype=np.uint8)
     sample_bgr=cv2.cvtColor(sample,cv2.COLOR_RGB2BGR)
-    for attack in selected:
-        for sev in args.severities:
-            call_official(getattr(module,attack),sample_bgr,sev,
-                          seed=trial_seed(args.seed,hosts[0].name,watermarks[0].name,'preflight',attack,sev),
-                          companion_repo=companion)
-    out=args.out_dir;out.mkdir(parents=True,exist_ok=True)
+    supported, unsupported = preflight_official(
+        module, selected, args.severities, sample_bgr,
+        hosts[0].name, watermarks[0].name, args.seed, companion)
+    preflight = {
+        'provider': 'official_MMWatermark_Robustness',
+        'official_commit': upstream_sha,
+        'official_source_sha256': hashlib.sha256(official_source.read_bytes()).hexdigest(),
+        'scikit_image_gaussian_keyword_adapter': bool(module._tempo_skimage_gaussian_compat),
+        'image_shape': list(sample.shape),
+        'requested_conditions': len(selected)*len(args.severities),
+        'supported_conditions': [{'attack': name, 'severity': sev} for name, sev in supported],
+        'unsupported_conditions': unsupported,
+        'warning': ('Unsupported upstream conditions are excluded, not approximated with local '
+                    'TEMPO attacks. Full external coverage requires resolving these incompatibilities.'),
+    }
+    save_json(out/'official_mmwatermark_preflight.json', preflight)
+    if args.strict_official_coverage and unsupported:
+        raise RuntimeError(f'{len(unsupported)} official conditions failed the 512x512 preflight; '
+                           f'see {out / "official_mmwatermark_preflight.json"}')
+    if not supported:
+        raise RuntimeError('No official upstream attack conditions passed preflight; '
+                           'see official_mmwatermark_preflight.json')
+    print(f'Official preflight supported {len(supported)}/'
+          f'{len(selected)*len(args.severities)} conditions', flush=True)
     rows=[];failures=[]
-    expected=len(hosts)*len(watermarks)*len(selected_methods)*(1+len(selected)*len(args.severities))
+    expected_full=len(hosts)*len(watermarks)*len(selected_methods)*(1+len(selected)*len(args.severities))
+    expected=len(hosts)*len(watermarks)*len(selected_methods)*(1+len(supported))
     for wm_i,wp in enumerate(watermarks):
         wm=load_binary_watermark(wp,size=64)
         for hp in hosts:
@@ -245,7 +308,7 @@ def main(args):
                 marked,key=embed(mid,host,wm,seed=seed,repeat='auto',method_params=params)
                 embed_ms=(time.perf_counter_ns()-t0)/1e6
                 clean_psnr=psnr(host,marked)
-                conditions=[('clean',0,None)]+[(name,s,getattr(module,name)) for name in selected for s in args.severities]
+                conditions=[('clean',0,None)]+[(name,sev,getattr(module,name)) for name,sev in supported]
                 for name,severity,fn in conditions:
                     label='clean' if fn is None else f'mmw::{name}::severity{severity}'
                     try:
@@ -266,17 +329,50 @@ def main(args):
                     except Exception as exc:
                         failures.append({'method':mid,'host':hp.name,'watermark':wp.name,
                                          'attack':label,'error':repr(exc)})
+                # Write partial evidence after each host/method so a Kaggle
+                # timeout does not discard the full external benchmark run.
+                if rows:
+                    partial_csv=out/'official_mmwatermark_raw.csv.part'
+                    save_csv(partial_csv,rows)
+                    partial_csv.replace(out/'official_mmwatermark_raw.csv')
+                progress={'status':'RUNNING_PARTIAL', 'provider_commit':upstream_sha,
+                          'last_host':hp.name,'last_watermark':wp.name,
+                          'last_method':mid,'completed_rows':len(rows),
+                          'expected_compatible_rows':expected,
+                          'expected_full_requested_rows':expected_full,
+                          'failure_count':len(failures),
+                          'preflight_unsupported_count':len(unsupported)}
+                save_json(out/'official_mmwatermark_progress.json',progress)
+                print('Official progress:',len(rows),'/',expected,
+                      'rows;',len(failures),'failed trials',flush=True)
     save_csv(out/'official_mmwatermark_raw.csv',rows)
     manifest={'provider':'official_MMWatermark_Robustness','official_url':OFFICIAL_URL,
               'official_commit':upstream_sha,'official_source_sha256':hashlib.sha256(official_source.read_bytes()).hexdigest(),
               'companion_commit':companion_sha,'selected_attack_functions':selected,
               'severities':args.severities,'methods':selected_methods,
               'hosts':[x.name for x in hosts],'watermarks':[x.name for x in watermarks],
+              'expected_full_requested_rows':expected_full,
+              'expected_compatible_rows':expected,
               'expected_rows':expected,'completed_rows':len(rows),'failures':failures,
+              'preflight_unsupported_conditions':unsupported,
+              'scikit_image_gaussian_keyword_adapter':bool(module._tempo_skimage_gaussian_compat),
               'complete':len(rows)==expected and not failures,
+              'full_coverage':len(rows)==expected_full and not failures and not unsupported,
               'scope':'official perturbations, not official model baselines; provider IDs are distinct from canonical attacks'}
     save_json(out/'official_mmwatermark_manifest.json',manifest)
-    print('Official external results:',len(rows),'/',expected)
+    save_json(out/'official_mmwatermark_progress.json', {
+        'status': 'COMPLETED_ALL_REQUESTED' if manifest['full_coverage'] else
+                  'COMPLETED_COMPATIBLE_ONLY' if manifest['complete'] else 'FAILED_TRIALS',
+        'completed_rows':len(rows), 'expected_compatible_rows':expected,
+        'expected_full_requested_rows':expected_full,
+        'preflight_unsupported_count':len(unsupported),
+        'failure_count':len(failures), 'provider_commit':upstream_sha,
+    })
+    print('Official external compatible results:',len(rows),'/',expected,
+          '(full requested:',expected_full,')')
+    if unsupported:
+        print(f'External coverage PARTIAL: {len(unsupported)} unsupported upstream conditions. '
+              'See official_mmwatermark_preflight.json.',flush=True)
     if failures:
         raise RuntimeError(f'{len(failures)} official perturbation/decode trials failed; see manifest')
 
@@ -297,4 +393,6 @@ if __name__=='__main__':
     p.add_argument('--host-limit',type=int,default=0)
     p.add_argument('--watermark-limit',type=int,default=0)
     p.add_argument('--seed',type=int,default=2026)
+    p.add_argument('--strict-official-coverage',action='store_true',
+                   help='Abort if any requested upstream attack/severity fails preflight')
     main(p.parse_args())

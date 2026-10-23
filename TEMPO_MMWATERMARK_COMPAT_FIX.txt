@@ -1,0 +1,55 @@
+TEMPO MMWatermark Compatibility Fix (2026-10-23)
+================================================
+
+Observed Kaggle commit: 3f3833074ce2e47d20f57616455f7431c65850e1
+Failed stage: 04_official_mmwatermark
+Observed traceback: TypeError: gaussian() got an unexpected keyword argument 'multichannel'
+
+CHANGED FILES
+  scripts/run_official_mmwatermark_tempo.py
+  tests/test_official_mmwatermark_compat.py (new)
+  SOURCE_MANIFEST.sha256
+  TEMPO_MMWATERMARK_COMPAT_FIX.txt (new)
+
+FIXES
+1. Activate the compatibility adapter already defined in the official runner
+   after dynamic import. Translate legacy skimage `multichannel=True`
+   into `channel_axis=-1` in the loaded module namespace only.
+2. Preserve the older automatic RGB-last-axis interpretation for upstream
+   gaussian calls that omit multichannel (including glass_blur). No Git
+   checkout under MMWatermark-Robustness or MM_Robustness is edited.
+3. Before embedding, exercise each genuine upstream attack and severity using
+   an actual 512x512 source host. Unsupported conditions produce a clear
+   `official_mmwatermark_preflight.json` report instead of terminating at the
+   first incompatibility. No local replacement attack is substituted.
+4. Save partial raw CSV and progress JSON after each host/method, so a Kaggle
+   session timeout does not discard completed external-method observations.
+5. The final manifest separately reports compatible condition completion and
+   full requested coverage. `full_coverage=false` means some requested
+   upstream conditions remain unsupported, even if the runner exits normally.
+
+STRICT OPTION
+   --strict-official-coverage
+   Reject any upstream attack that fails preflight; preflight JSON is still
+   saved before exiting. Default permits explicitly documented partial
+   official-provider coverage.
+
+RE-RUN ONLY THE FAILED STAGE (in the same Kaggle session where main completed)
+   cd /kaggle/working/tempo
+   git fetch origin main && git reset --hard origin/main
+   PYTHONPATH=src:. python scripts/verify_source_manifest.py --allow-missing
+   PYTHONPATH=src:. python scripts/run_official_mmwatermark_tempo.py \
+     --official-repo /kaggle/working/MMWatermark-Robustness \
+     --companion-repo /kaggle/working/MM_Robustness \
+     --host-dir /kaggle/working/TEMPO_FULL_RESULTS/holdout/test \
+     --watermark-dir /kaggle/working/TEMPO_SELECTED_DATA/watermark \
+     --config /kaggle/working/TEMPO_FULL_RESULTS/configs/proposal_selected_all_watermarks.json \
+     --out-dir /kaggle/working/TEMPO_EXTRA_RESULTS/external_official_mmwatermark \
+     --methods proposal
+
+If prior Kaggle artifacts are not available, run the full Kaggle pipeline
+again or attach/restore the previous results before running this stage.
+Do not assume a completed 109-attacks local suite certifies the external
+MMWatermark track. This fix cannot guarantee every upstream method works
+with 512x512 RGB or all dependency versions; verify its preflight and
+final manifests for any remaining unsupported conditions.
