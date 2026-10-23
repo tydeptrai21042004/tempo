@@ -19,7 +19,7 @@ import cv2
 from PIL import Image
 
 from realtime_watermark.core import (
-    load_binary_watermark, nc_binary, psnr, bit_accuracy, dct_basis
+    load_binary_watermark, nc_binary, psnr, bit_accuracy, dct_basis, attack_jpeg
 )
 from realtime_watermark.proposals.jilp_qim.config import JILPQIMConfig
 from realtime_watermark.proposals.jilp_qim.method import (
@@ -50,10 +50,8 @@ def warp(img: np.ndarray, *, angle=0.0, dx=0.0, dy=0.0, scale=1.0, shear=0.0) ->
 
 
 def jpeg(img: np.ndarray, quality: int) -> np.ndarray:
-    sink = io.BytesIO()
-    Image.fromarray(img).save(sink, 'JPEG', quality=quality, subsampling=0)
-    sink.seek(0)
-    return np.asarray(Image.open(sink).convert('RGB')).copy()
+    """Share the primary benchmark's Pillow-default JPEG implementation."""
+    return attack_jpeg(img, int(quality))
 
 
 def projected_coordinates(image: np.ndarray, indices: np.ndarray, eta: float, which: str) -> np.ndarray:

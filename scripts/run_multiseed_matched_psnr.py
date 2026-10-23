@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--calibration-host-count", type=int, default=3)
     parser.add_argument("--timing-repeats", type=int, default=10)
     parser.add_argument("--timing-warmups", type=int, default=3)
-    parser.add_argument("--attack-preset", choices=["smoke", "standard", "extended", "stress"], default="stress")
+    parser.add_argument("--attack-preset", choices=["smoke", "standard", "extended", "stress", "unified"], default="stress")
     parser.add_argument("--host-limit", type=int, default=0)
     parser.add_argument("--watermark-limit", type=int, default=0)
     parser.add_argument("--bootstrap-samples", type=int, default=5000)

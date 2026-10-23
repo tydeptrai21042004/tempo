@@ -32,14 +32,17 @@ def test_aliases_resolve():
     assert normalize_method_id("jilp_qim") == "proposal"
 
 
-def test_all_methods_are_primary_common_protocol_eligible():
+def test_primary_blind_ranking_excludes_methods_requiring_side_information():
     expected_tiers = {
         "ca_qim_a2_mao2024": "semi_blind",
         "dct_spread_spectrum_cox1997": "non_blind",
     }
     for method in EXPECTED:
-        assert common_primary_static_eligible(method)
         disclosure = fidelity_status(method)
+        if method in {"ca_qim_a2_mao2024", "dct_spread_spectrum_cox1997"}:
+            assert not common_primary_static_eligible(method)
+        else:
+            assert common_primary_static_eligible(method)
         assert disclosure["blindness_tier"] == expected_tiers.get(method, "blind")
         assert disclosure["unresolved_core_stages"] == []
 

@@ -67,7 +67,7 @@ PAPER_FIDELITY: dict[str, dict] = {
         "paper_reproduction_eligible": False,
         "native_formula_reproduction_eligible": False,
         "native_metric_schema_reproduction_eligible": True,
-        "common_primary_eligible": True,
+        "common_primary_eligible": False,
         "blindness_tier": "semi_blind",
         "verified_capacity": "four bits per A2/4A2 carrier vector",
         "verified": [
@@ -93,7 +93,7 @@ PAPER_FIDELITY: dict[str, dict] = {
         "paper_reproduction_eligible": False,
         "native_formula_reproduction_eligible": False,
         "native_metric_schema_reproduction_eligible": True,
-        "common_primary_eligible": True,
+        "common_primary_eligible": False,
         "blindness_tier": "non_blind",
         "verified_capacity": "native 1000-sample Gaussian watermark; common adapter supports one sign bit per selected AC coefficient",
         "verified": [

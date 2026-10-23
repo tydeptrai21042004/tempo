@@ -692,8 +692,8 @@ def attack_perspective(img: np.ndarray, fraction: float = 0.02) -> np.ndarray:
     """Small deterministic keystone warp using OpenCV when available."""
     try:
         import cv2  # type: ignore
-    except Exception:  # pragma: no cover
-        return attack_affine_shear(img, float(fraction))
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("Perspective attack requires opencv-python; no substitute accepted") from exc
     arr = np.asarray(img, dtype=np.uint8)
     h, w = arr.shape[:2]
     dx, dy = float(w) * float(fraction), float(h) * float(fraction)
@@ -746,6 +746,7 @@ def attack_print_scan(img: np.ndarray) -> np.ndarray:
 def attack_category(name: str) -> str:
     n = str(name).lower()
     if n == "clean": return "clean"
+    if n.startswith("scale_geometry_"): return "geometric"
     if any(x in n for x in ("jpeg", "webp", "chroma420", "screen_capture")): return "compression"
     if any(x in n for x in ("rotate", "translate", "resize", "crop", "affine", "perspective", "pixelate", "aspect")): return "geometric"
     if any(x in n for x in ("blur", "median", "morph", "sharpen")): return "filtering"
@@ -754,6 +755,53 @@ def attack_category(name: str) -> str:
     if any(x in n for x in ("cutout", "dropout", "overlay", "line_")): return "occlusion"
     if "print_scan" in n: return "acquisition"
     return "combined"
+
+def attack_jpeg_subsampling(img: np.ndarray, quality: int, subsampling: int) -> np.ndarray:
+    """Explicit JPEG subsampling (0=4:4:4, 2=4:2:0), unlike legacy Pillow-default JPEG."""
+    if int(subsampling) not in (0, 2):
+        raise ValueError("Only 4:4:4 and 4:2:0 subsampling are supported")
+    buffer = BytesIO()
+    Image.fromarray(np.asarray(img, dtype=np.uint8)).save(
+        buffer, format="JPEG", quality=int(quality), subsampling=int(subsampling))
+    buffer.seek(0)
+    with Image.open(buffer) as decoded:
+        return np.asarray(decoded.convert("RGB"), dtype=np.uint8)
+
+
+def attack_gaussian_variance(img: np.ndarray, variance: float, seed: int = 123) -> np.ndarray:
+    """Normalized [0,1] RGB additive Gaussian variance, not pixel-unit sigma."""
+    if not (0.0 <= float(variance) <= 1.0):
+        raise ValueError("Normalized variance must be in [0,1]")
+    return attack_gaussian(img, 255.0 * math.sqrt(float(variance)), seed)
+
+
+def attack_speckle_variance(img: np.ndarray, variance: float, seed: int = 777) -> np.ndarray:
+    """Normalized multiplicative Gaussian variance: I'=I*(1+N(0,var))."""
+    if not (0.0 <= float(variance) <= 1.0):
+        raise ValueError("Normalized variance must be in [0,1]")
+    return attack_speckle(img, math.sqrt(float(variance)), seed)
+
+
+def attack_translate_subpixel(img: np.ndarray, shift_x: float, shift_y: float) -> np.ndarray:
+    """Fractional pixel translation, bicubic interpolation, zero fill."""
+    im = Image.fromarray(np.asarray(img, dtype=np.uint8), mode="RGB")
+    return np.asarray(im.transform(im.size, Image.Transform.AFFINE,
+        (1, 0, -float(shift_x), 0, 1, -float(shift_y)),
+        resample=Image.Resampling.BICUBIC, fillcolor=(0, 0, 0)), dtype=np.uint8)
+
+
+def attack_scaled_geometry(img: np.ndarray, scale: float) -> np.ndarray:
+    """Centered uniform zoom with retained canvas; unlike resize-then-restore."""
+    scale = float(scale)
+    if scale <= 0:
+        raise ValueError("Scale must be positive")
+    im = Image.fromarray(np.asarray(img, dtype=np.uint8), mode="RGB")
+    w, h = im.size
+    inv = 1.0 / scale
+    return np.asarray(im.transform(im.size, Image.Transform.AFFINE,
+        (inv, 0, (1-inv)*w/2.0, 0, inv, (1-inv)*h/2.0),
+        resample=Image.Resampling.BICUBIC, fillcolor=(0, 0, 0)), dtype=np.uint8)
+
 
 def default_attacks(preset: str = "extended") -> list[tuple[str, Callable[[np.ndarray], np.ndarray]]]:
     """Reproducible attack suite.
@@ -764,6 +812,9 @@ def default_attacks(preset: str = "extended") -> list[tuple[str, Callable[[np.nd
       - extended: full stress suite with hard compression, color, geometry, quantization, and combined attacks.
       - stress: alias of extended for explicit stress-test command lines.
     """
+    if str(preset).lower().strip() == "unified":
+        from .attack_manifest import unified_attacks
+        return unified_attacks()
     attacks = [
         ("clean", lambda x: x),
         ("jpeg90", lambda x: attack_jpeg(x, 90)),
@@ -858,4 +909,4 @@ def default_attacks(preset: str = "extended") -> list[tuple[str, Callable[[np.nd
     }
     if preset == "standard":
         return [(n, f) for n, f in attacks if n in standard]
-    raise ValueError("preset must be 'smoke', 'standard', 'extended', or 'stress'")
+    raise ValueError("preset must be 'smoke', 'standard', 'extended', 'stress', or 'unified'")

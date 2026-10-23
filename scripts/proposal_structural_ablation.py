@@ -88,7 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--wm-size", type=int, default=64)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--seed-stride", type=int, default=101)
-    parser.add_argument("--attack-preset", choices=["smoke", "standard", "extended", "stress"], default="standard")
+    parser.add_argument("--attack-preset", choices=["smoke", "standard", "extended", "stress", "unified"], default="standard")
     parser.add_argument("--target-psnr", type=float, default=45.0)
     parser.add_argument("--calibration-host-count", type=int, default=3)
     parser.add_argument("--calibration-iterations", type=int, default=8)

@@ -25,7 +25,7 @@ def main() -> None:
     parser.add_argument("--codec", default="mp4v")
     parser.add_argument(
         "--attack-preset",
-        choices=["smoke", "standard", "extended", "stress"],
+        choices=["smoke", "standard", "extended", "stress", "unified"],
         default="stress",
     )
     parser.add_argument("--skip-video", action="store_true")

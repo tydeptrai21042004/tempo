@@ -1,0 +1,12 @@
+TEMPO FINAL REVIEWER PATCH (against uploaded tempo-main.zip, SHA 10e6662c52f61834cca3714c6390be8f42f7f644)
+
+Extract at the ROOT of your existing GitHub repository, preserving folder paths.
+Only added or changed source files are inside this archive; do not replace the repository with this archive.
+Commit/push all changed files, including SOURCE_MANIFEST.sha256.
+Run: python scripts/verify_source_manifest.py
+Run: PYTHONPATH=src:. python -m pytest -q
+Run: PYTHONPATH=src:. python scripts/audit_common_protocol.py --attack-preset unified --output /tmp/tempo_attack_audit.json
+Kaggle full: bash scripts/kaggle_auto_video.sh full
+Legacy protocol: IMAGE_ATTACK_PRESET=stress bash scripts/kaggle_auto_video.sh full
+MMWatermark optional upstream: TEMPO_OFFICIAL_MMWATERMARK=1 bash scripts/kaggle_auto_video.sh full
+Read TEMPO_UNIFIED_PATCH_README.txt for scientific constraints.

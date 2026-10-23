@@ -22,14 +22,20 @@ OBSOLETE = tuple(
 def test_no_document_files_or_generated_result_directories():
     forbidden_suffixes = {".md", ".rst", ".doc", ".docx"}
     # Source-controlled experiment protocols are intentional, not generated documents.
-    allowed_protocols = {"TEMPO_METHOD_REVISION_README.md", "VIDEO_EVIDENCE_README.md", "README_PATCH.md", "HARTLEY_FREQUENCY_PRESERVING_PATCH_README.md"}
+    allowed_protocols = {"TEMPO_METHOD_REVISION_README.md", "VIDEO_EVIDENCE_README.md", "README_PATCH.md", "PATCH_README.md", "HARTLEY_FREQUENCY_PRESERVING_PATCH_README.md"}
     documents = [
         p for p in ROOT.rglob("*")
         if p.is_file() and p.suffix.lower() in forbidden_suffixes
         and p.name not in allowed_protocols
         and ".pytest_cache" not in p.parts and ".venv" not in p.parts
     ]
-    generated_dirs = [ROOT / name for name in ("reports", "results", "validation")]
+    generated_dirs = [ROOT / name for name in ("reports", "results")]
+    # The uploaded repository intentionally tracks two preliminary CSV studies
+    # under validation/. Reject new generated validation artifacts, not these.
+    tracked_validation = {"preliminary_12host_7variant_summary.csv",
+                          "preliminary_2host_23variant_summary.csv"}
+    validation = ROOT / "validation"
+    assert not validation.exists() or {x.name for x in validation.iterdir()} <= tracked_validation
     assert not documents
     assert not [p for p in generated_dirs if p.exists()]
 

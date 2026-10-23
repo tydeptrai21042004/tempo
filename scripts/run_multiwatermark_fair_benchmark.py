@@ -19,6 +19,7 @@ DEFAULT_METHODS = (
     "dct_dm_qim_chen2001",
     "dct_stdm_qim_chen2001",
     "dct_iss_malvar2003",
+    "ca_qim_a2_mao2024",
     "proposal",
 )
 
@@ -116,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timing-repeats", type=int, default=10)
     parser.add_argument("--timing-warmups", type=int, default=3)
     parser.add_argument(
-        "--attack-preset", choices=["smoke", "standard", "extended", "stress"],
+        "--attack-preset", choices=["smoke", "standard", "extended", "stress", "unified"],
         default="stress",
     )
     return parser

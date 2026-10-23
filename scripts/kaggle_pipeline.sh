@@ -61,7 +61,7 @@ if [[ "$MODE" == "quick" ]]; then
   VIDEO_STREAM_CHANNELS="${VIDEO_STREAM_CHANNELS:-clean,jpeg70,jpeg40}"
 else
   HP_ATTACK_PRESET="${HP_ATTACK_PRESET:-standard}"
-  IMAGE_ATTACK_PRESET="${IMAGE_ATTACK_PRESET:-stress}"
+  IMAGE_ATTACK_PRESET="${IMAGE_ATTACK_PRESET:-unified}"
   VIDEO_FRAMES="${VIDEO_FRAMES:-300}"
   VIDEO_WARMUP_FRAMES="${VIDEO_WARMUP_FRAMES:-10}"
   HOST_LIMIT="${HOST_LIMIT:-0}"
@@ -188,6 +188,11 @@ fi
   --out "$REPORT_ROOT/paper_native" \
   "${NATIVE_ARGS[@]}"
 
+stage "5A. FREEZE CANONICAL ATTACK AND BASELINE FIDELITY MANIFESTS"
+"$PYTHON_BIN" scripts/audit_common_protocol.py \
+  --output "$REPORT_ROOT/validation/common_protocol.json" \
+  --attack-preset "$IMAGE_ATTACK_PRESET"
+
 stage "6. RUN ALL IMAGE METHODS ON BOTH WATERMARKS"
 METRIC_ARGS=(
   --host-dir "$TEST_HOST_DIR"
@@ -309,7 +314,7 @@ MATCHED_ARGS=()
 if [[ "$MODE" == "quick" ]]; then
   MATCHED_ARGS+=(--host-limit 1 --watermark-limit 1 --attack-preset smoke --timing-repeats 2 --timing-warmups 1)
 else
-  MATCHED_ARGS+=(--attack-preset stress --timing-repeats 5 --timing-warmups 2)
+  MATCHED_ARGS+=(--attack-preset "$IMAGE_ATTACK_PRESET" --timing-repeats 5 --timing-warmups 2)
 fi
 "$PYTHON_BIN" scripts/run_multiwatermark_fair_benchmark.py \
   --host-dir "$TEST_HOST_DIR" --calibration-host-dir "$DEV_HOST_DIR" \
@@ -327,6 +332,30 @@ stage "9D. HOST-CLUSTERED CONFIDENCE INTERVALS AND PAIRED EFFECTS"
   --input "$REPORT_ROOT/all_methods_all_metrics/all_watermarks_all_methods_all_metrics.csv" \
   --out-dir "$REPORT_ROOT/statistical_evidence" --seed "$SEED"
 
+if [[ "${TEMPO_OFFICIAL_MMWATERMARK:-0}" == "1" ]]; then
+  stage "9E. OPTIONAL VERIFIED-UPSTREAM MMWATERMARK ATTACK TRACK"
+  # Upstream dependency installation is intentionally user-controlled.
+  # No synthetic or local corruption is substituted for upstream failures.
+  OFFICIAL_CMD=(
+    "$PYTHON_BIN" scripts/run_official_mmwatermark_tempo.py
+    --official-repo "${TEMPO_MMWATERMARK_SOURCE:-$WORK_ROOT/MMWatermark-Robustness}"
+    --host-dir "$TEST_HOST_DIR" --watermark-dir "$WATERMARK_DIR"
+    --config "$SELECTED_CONFIG"
+    --out-dir "$REPORT_ROOT/external_official_mmwatermark"
+    --methods "${TEMPO_OFFICIAL_METHODS:-proposal}"
+  )
+  if [[ -n "${TEMPO_MMWATERMARK_SOURCE_COMMIT:-}" ]]; then
+    OFFICIAL_CMD+=(--expected-sha "$TEMPO_MMWATERMARK_SOURCE_COMMIT")
+  fi
+  if [[ -n "${TEMPO_MMWATERMARK_COMPANION:-}" ]]; then
+    OFFICIAL_CMD+=(--companion-repo "$TEMPO_MMWATERMARK_COMPANION")
+  fi
+  if [[ "$MODE" == "quick" ]]; then
+    OFFICIAL_CMD+=(--host-limit 1 --watermark-limit 1 --severities 1)
+  fi
+  "${OFFICIAL_CMD[@]}"
+fi
+
 stage "10. EXPORT EVIDENCE AND PACKAGE RESULTS"
 "$PYTHON_BIN" scripts/export_method_evidence.py --out-dir "$REPORT_ROOT/method_evidence"
 "$PYTHON_BIN" -m pip freeze > "$REPORT_ROOT/pip_freeze.txt" || true
@@ -339,6 +368,7 @@ host_rule=all BMP except names containing lena or lenna
 watermark_rule=both PNG watermarks; quick mode is a smoke subset
 hyperparameter_attack_preset=$HP_ATTACK_PRESET
 image_attack_preset=$IMAGE_ATTACK_PRESET
+official_mmwatermark_enabled=${TEMPO_OFFICIAL_MMWATERMARK:-0}
 video_frames=$VIDEO_FRAMES
 video_codec=$VIDEO_CODEC
 stream_frames=$STREAM_FRAMES
