@@ -22,7 +22,7 @@ OBSOLETE = tuple(
 def test_no_document_files_or_generated_result_directories():
     forbidden_suffixes = {".md", ".rst", ".doc", ".docx"}
     # Source-controlled experiment protocols are intentional, not generated documents.
-    allowed_protocols = {"TEMPO_METHOD_REVISION_README.md", "VIDEO_EVIDENCE_README.md", "README_PATCH.md", "PATCH_README.md", "HARTLEY_FREQUENCY_PRESERVING_PATCH_README.md"}
+    allowed_protocols = {"TEMPO_METHOD_REVISION_README.md", "VIDEO_EVIDENCE_README.md", "README_PATCH.md", "PATCH_README.md", "HARTLEY_FREQUENCY_PRESERVING_PATCH_README.md", "README_OFFICIAL_MMWATERMARK_FIX.md"}
     documents = [
         p for p in ROOT.rglob("*")
         if p.is_file() and p.suffix.lower() in forbidden_suffixes

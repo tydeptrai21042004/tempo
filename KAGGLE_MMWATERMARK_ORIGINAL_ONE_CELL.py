@@ -1,10 +1,12 @@
 # Paste this entire file as ONE Kaggle cell after pushing the patch files to GitHub.
 # Settings: CPU / Accelerator None; Internet ON.
-# Finds previous complete split/config in /kaggle/working, otherwise starts a
-# genuine full native TEMPO pipeline before the original upstream benchmark.
+# Reuses a previous genuine held-out split/config when available; otherwise
+# checks the repository's byte-verified frozen 2026-10-21 split and parameters.
+# To force a NEW full TEMPO study (including real video), set environment
+# variable TEMPO_MMW_RUN_NATIVE_FULL=1 before executing this cell.
 # No fabricated data, no mock watermarking models, no local substitution.
 
-import os, sys, subprocess, shutil, json, time, zipfile, signal
+import os, sys, subprocess, shutil, json, time, zipfile, signal, hashlib
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -17,10 +19,10 @@ OUT = RUN / 'extra' / 'external_official_mmwatermark'
 META = RUN / 'run_metadata'
 META.mkdir(parents=True, exist_ok=True)
 ZIP = WORK / 'TEMPO_ORIGINAL_MMWATERMARK_RESULTS.zip'
-RUN_MAIN_IF_NO_PREVIOUS_RESULTS = True
+RUN_MAIN_IF_NO_PREVIOUS_RESULTS = os.environ.get("TEMPO_MMW_RUN_NATIVE_FULL", "0") == "1"
 MAX_HOURS = 11.4
 DEADLINE = time.monotonic() + MAX_HOURS * 3600
-status = {'status':'STARTING', 'native_pipeline_rerun':False}
+status = {'status':'STARTING', 'native_pipeline_rerun':False, 'source_data_type':None}
 
 def run_stage(label, cmd, *, cwd=None, env=None, reserve=420):
     remaining = DEADLINE - time.monotonic() - reserve
@@ -47,11 +49,36 @@ def run_stage(label, cmd, *, cwd=None, env=None, reserve=420):
 
 
 def eligible(root):
-    report = root / 'reports'
-    return (report/'configs/proposal_selected_all_watermarks.json').is_file() and \
-           (report/'holdout/test').is_dir() and \
-           (root/'selected_data/watermark').is_dir() and \
-           (report/'holdout/split_manifest.json').is_file()
+    """Only reuse a complete, correctly hashed 3/9 held-out native dataset."""
+    report=root/'reports'
+    config=report/'configs/proposal_selected_all_watermarks.json'
+    split=report/'holdout/split_manifest.json'
+    marks=root/'selected_data/watermark'
+    try:
+        if not (config.is_file() and split.is_file() and marks.is_dir()):
+            return False
+        parameters=json.loads(config.read_text())
+        if not isinstance(parameters,dict) or not isinstance(parameters.get('parameters'),dict):
+            return False
+        entries=json.loads(split.read_text())
+        if len(entries.get('development',[])) != 3 or len(entries.get('test',[])) != 9:
+            return False
+        for group in ('development','test'):
+            names=set()
+            for row in entries[group]:
+                name=row['name']
+                file=report/'holdout'/group/name
+                if name in names or any(x in name.lower() for x in ('lena','lenna')):
+                    return False
+                names.add(name)
+                if not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest()!=row['sha256']:
+                    return False
+        if {p.name for p in marks.glob('*.png')} != {
+                'watermark_001_Cc.logo.circle.png','watermark_002_wm.png'}:
+            return False
+        return True
+    except (ValueError, KeyError, TypeError, OSError):
+        return False
 
 try:
     run_stage('00_clone_tempo', ['git','clone','--depth','1','--branch','main',GITHUB,REPO],cwd=WORK)
@@ -59,6 +86,8 @@ try:
         ['git','-C',str(REPO),'rev-parse','HEAD'], text=True).strip()
     required = ['scripts/run_mmwatermark_in_official_repo.py',
                 'scripts/run_official_mmwatermark_tempo.py',
+                'scripts/prepare_mmwatermark_inputs.py',
+                'scripts/baseline_preflight.py',
                 'scripts/kaggle_pipeline.sh']
     missing=[x for x in required if not (REPO/x).is_file()]
     if missing:
@@ -80,21 +109,37 @@ try:
                        key=lambda x:x.stat().st_mtime, reverse=True)
     if all_results:
         DATA=all_results[0]
+        status['source_data_type']='previous_fresh_pipeline_outputs'
         print('Reusing real frozen proposal config and held-out images:',DATA)
     else:
-        if not RUN_MAIN_IF_NO_PREVIOUS_RESULTS:
-            raise RuntimeError('No previous split/config. Enable full native rerun or attach previous results.')
         DATA=RUN
-        status['native_pipeline_rerun']=True
-        env['KAGGLE_REPORT_ROOT']=str(DATA/'reports')
-        env['KAGGLE_SELECTED_DATA_DIR']=str(DATA/'selected_data')
-        env['KAGGLE_MASTER_ZIP']=str(DATA/'TEMPO_PIPELINE_RESULTS.zip')
-        run_stage('02_full_native', ['bash', REPO/'scripts/kaggle_pipeline.sh','full'],
-                  cwd=REPO,env=env, reserve=1600)
+        if RUN_MAIN_IF_NO_PREVIOUS_RESULTS:
+            status['native_pipeline_rerun']=True
+            status['source_data_type']='newly_optimized_full_native_pipeline'
+            env['KAGGLE_REPORT_ROOT']=str(DATA/'reports')
+            env['KAGGLE_SELECTED_DATA_DIR']=str(DATA/'selected_data')
+            env['KAGGLE_MASTER_ZIP']=str(DATA/'TEMPO_PIPELINE_RESULTS.zip')
+            run_stage('02_full_native', ['bash', REPO/'scripts/kaggle_pipeline.sh','full'],
+                      cwd=REPO,env=env, reserve=1600)
+        else:
+            # This is the MMWatermark-only workflow. No needless 2.6-hour
+            # native video/baseline run, and no tuning on final held-out hosts.
+            status['source_data_type']='repository_frozen_20261021_not_newly_tuned'
+            run_stage('02_prepare_verified_inputs', [selected_python,
+                      REPO/'scripts/prepare_mmwatermark_inputs.py',
+                      '--repo',REPO,'--run',RUN],cwd=REPO,env=env)
         if not eligible(DATA):
-            raise RuntimeError('Full TEMPO run did not produce a valid frozen split/config')
+            raise RuntimeError('Inputs do not have a verified held-out split and frozen proposal')
     status['source_data_root']=str(DATA)
-    run_stage('03_original_mmwatermark', [
+    status['config_file_sha256'] = __import__(
+        'hashlib').sha256((DATA/'reports/configs/proposal_selected_all_watermarks.json').read_bytes()).hexdigest()
+    # Check executable baseline implementations separately. These are NOT
+    # claimed to be full copies of the original authors' end-to-end pipelines.
+    run_stage('03_baseline_preflight', [selected_python,REPO/'scripts/baseline_preflight.py',
+              '--host-dir',DATA/'reports/holdout/test',
+              '--watermark-dir',DATA/'selected_data/watermark',
+              '--out',RUN/'extra/baseline_preflight.json'],cwd=REPO,env=env)
+    run_stage('04_original_mmwatermark', [
         selected_python, REPO/'scripts/run_mmwatermark_in_official_repo.py',
         '--official-repo',RUN/'MMWatermark-Robustness',
         '--companion-repo',RUN/'MM_Robustness',
@@ -119,11 +164,12 @@ finally:
     # records their commits; preserve all experimental outputs and error logs.
     zip_tmp=ZIP.with_suffix('.zip.part')
     with zipfile.ZipFile(zip_tmp,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=1,allowZip64=True) as z:
-        for directory in (OUT,META):
+        for directory in (OUT,META,RUN/'extra'):
             if directory.is_dir():
                 for file in directory.rglob('*'):
                     if file.is_file() and not file.name.endswith(('.part','.tmp')):
-                        z.write(file,arcname=str(file.relative_to(RUN)))
+                        name=str(file.relative_to(RUN))
+                        if name not in z.namelist(): z.write(file,arcname=name)
         if 'DATA' in globals() and eligible(DATA):
             for file in (DATA/'reports/configs/proposal_selected_all_watermarks.json',
                          DATA/'reports/holdout/split_manifest.json'):
@@ -132,4 +178,4 @@ finally:
     print('Final ZIP:',ZIP, 'size MB:',round(ZIP.stat().st_size/1e6,2))
     print(json.dumps(status,indent=2))
     if status['status']!='COMPLETED_FULL_OFFICIAL':
-        print('Inspect 03_original_mmwatermark.log, preflight JSON and status.json in ZIP.')
+        print('Inspect 04_original_mmwatermark.log, preflight JSON and status.json in ZIP.')

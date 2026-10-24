@@ -1,0 +1,73 @@
+TEMPO MMWATERMARK-ONLY CORRECTION (2026-10-24)
+=========================================================
+This archive contains ONLY 6 modified/new repository files + this instruction.
+It applies to the uploaded tempo-main(2).zip repository. Do not remove original files.
+
+Root-relative paths:
+  KAGGLE_MMWATERMARK_ORIGINAL_ONE_CELL.py
+  scripts/prepare_mmwatermark_inputs.py
+  scripts/baseline_preflight.py
+  tests/test_clean_repository.py
+  tests/test_mmwatermark_kaggle_regressions.py
+  SOURCE_MANIFEST.sha256
+
+FIXES
+  A) Whitelist the deliberately tracked README_OFFICIAL_MMWATERMARK_FIX.md
+     in tests/test_clean_repository.py; this caused the 210-pass/1-failure
+     Kaggle error BEFORE any expensive upstream benchmark.
+  B) Default the MMWatermark-only notebook to reuse verified prior complete
+     TEMPO_FRESH_* data, or stage the repository's authentic SHA-verified
+     October 21, 2026 frozen 12-host data and 3-development/9-test split.
+     It does NOT run the entire multi-hour native pipeline by default.
+  C) Verify the frozen configuration, all 12 input host hashes and watermarks.
+     Do not tune the proposed method on held-out samples.
+  D) Run five common 4096-bit baseline implementations on both watermarks
+     before MMWatermark; check host immutability, seeded reproducibility,
+     decoder output, detector blindness classification and clean accuracy.
+     DEW is independently executed at its capacity-compatible 256 bits.
+  E) Invoke the existing scripts/run_mmwatermark_in_official_repo.py, which
+     clones both original Jielin-Qiu Git repositories; executes a bridge from
+     inside official MMWatermark checkout; uses ORIGINAL perturbation functions;
+     and requires full requested coverage. Upstream tracked code is unchanged.
+  F) Regenerate SOURCE_MANIFEST.sha256, so source verification passes.
+
+HOW TO APPLY
+  1. Extract this patch ZIP over the root of the latest GitHub 'tempo' clone.
+     Do NOT upload the ZIP itself to your repository as a new file.
+  2. Run locally (requirements must be installed):
+      PYTHONPATH=src:. python scripts/verify_source_manifest.py
+      PYTHONPATH=src:. python -m pytest -q tests/test_clean_repository.py tests/test_mmwatermark_kaggle_regressions.py tests/test_official_mmwatermark_compat.py tests/test_official_repo_entry.py
+  3. git add KAGGLE_MMWATERMARK_ORIGINAL_ONE_CELL.py scripts/prepare_mmwatermark_inputs.py scripts/baseline_preflight.py tests/test_clean_repository.py tests/test_mmwatermark_kaggle_regressions.py SOURCE_MANIFEST.sha256
+     git commit -m "Fix upstream MMWatermark run and verify baseline contracts"
+     git push origin main
+  4. Run in Kaggle (Internet ON; Accelerator None):
+      import urllib.request
+      u='https://raw.githubusercontent.com/tydeptrai21042004/tempo/main/KAGGLE_MMWATERMARK_ORIGINAL_ONE_CELL.py'
+      exec(compile(urllib.request.urlopen(u,timeout=60).read().decode(),u,'exec'))
+
+INPUT CHOICE
+  - Previous valid TEMPO_FRESH_* results: use THEIR selected config and
+    held-out split, only after verifying test file hashes and mark filenames.
+  - Fresh Kaggle without TEMPO_FRESH_*: use committed config
+    configs/frozen_selected_20261021.json. The output explicitly marks this
+    as 'repository_frozen_20261021_not_newly_tuned'; it does NOT pretend a new
+    hyperparameter search was performed.
+  - To force the full native TEMPO pipeline as well, before running the cell:
+      import os
+      os.environ['TEMPO_MMW_RUN_NATIVE_FULL']='1'
+    This option is much heavier and involves downloading/processing real video.
+
+RESULTS
+  /kaggle/working/TEMPO_ORIGINAL_MMWATERMARK_RESULTS.zip
+  Includes stage logs, source commits, MMW preflight, raw results, metadata,
+  and baseline preflight. Full upstream coverage is only true if all requested
+  upstream attack/severity conditions succeeded.
+
+LOCAL VERIFICATION
+  80 focused tests passed (baseline, upstream bridge, Kaggle smoke checks).
+  231 source SHA-256 entries verified; 0 mismatches/missing.
+  The full collection of slower repository tests did not finish within the
+  local execution timeout; do not infer complete end-to-end certification.
+  Live upstream Git clones/full Kaggle run are NOT verified by local tests.
+  No baseline algorithm equations were silently changed; the validated common
+  adapters must not be described as fully faithful end-to-end paper replicas.
