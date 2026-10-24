@@ -84,7 +84,8 @@ def get_hosts(host_dir:str|None,limit:int,split:str,split_manifest:str|None)->li
         if split=='holdout':raise ValueError('Holdout requires actual host BMP directory')
         return [('demo_512',make_demo_host(512,512),'synthetic')]
     base=Path(host_dir)
-    all_files={path.name:path for path in base.glob('*.bmp') if 'lena' not in path.name.lower()}
+    all_files={path.name:path for path in base.glob('*.bmp')
+               if not any(excluded in path.name.casefold() for excluded in ('lena', 'lenna'))}
     if not all_files:raise RuntimeError('No BMP hosts found (Lena excluded)')
     if split_manifest:
         doc=json.loads(Path(split_manifest).read_text(encoding='utf-8'))

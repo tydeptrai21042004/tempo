@@ -333,25 +333,23 @@ stage "9D. HOST-CLUSTERED CONFIDENCE INTERVALS AND PAIRED EFFECTS"
   --out-dir "$REPORT_ROOT/statistical_evidence" --seed "$SEED"
 
 if [[ "${TEMPO_OFFICIAL_MMWATERMARK:-0}" == "1" ]]; then
-  stage "9E. OPTIONAL VERIFIED-UPSTREAM MMWATERMARK ATTACK TRACK"
-  # Upstream dependency installation is intentionally user-controlled.
-  # No synthetic or local corruption is substituted for upstream failures.
+  stage "9E. ORIGINAL MMWATERMARK CLONE + TEMPO PROPOSAL IN UPSTREAM CHECKOUT"
+  # This clones both REAL official repositories, installs only a TEMPO-owned
+  # untracked entrypoint into the original perturbations directory, and runs
+  # the proposal there. No tracked upstream code is modified or reimplemented.
   OFFICIAL_CMD=(
-    "$PYTHON_BIN" scripts/run_official_mmwatermark_tempo.py
+    "$PYTHON_BIN" scripts/run_mmwatermark_in_official_repo.py
     --official-repo "${TEMPO_MMWATERMARK_SOURCE:-$WORK_ROOT/MMWatermark-Robustness}"
+    --companion-repo "${TEMPO_MMWATERMARK_COMPANION:-$WORK_ROOT/MM_Robustness}"
     --host-dir "$TEST_HOST_DIR" --watermark-dir "$WATERMARK_DIR"
     --config "$SELECTED_CONFIG"
     --out-dir "$REPORT_ROOT/external_official_mmwatermark"
-    --methods "${TEMPO_OFFICIAL_METHODS:-proposal}"
   )
-  if [[ -n "${TEMPO_MMWATERMARK_SOURCE_COMMIT:-}" ]]; then
-    OFFICIAL_CMD+=(--expected-sha "$TEMPO_MMWATERMARK_SOURCE_COMMIT")
-  fi
-  if [[ -n "${TEMPO_MMWATERMARK_COMPANION:-}" ]]; then
-    OFFICIAL_CMD+=(--companion-repo "$TEMPO_MMWATERMARK_COMPANION")
-  fi
   if [[ "$MODE" == "quick" ]]; then
     OFFICIAL_CMD+=(--host-limit 1 --watermark-limit 1 --severities 1)
+  fi
+  if [[ "${TEMPO_MMWATERMARK_ALLOW_PARTIAL:-0}" == "1" ]]; then
+    OFFICIAL_CMD+=(--allow-partial)
   fi
   "${OFFICIAL_CMD[@]}"
 fi

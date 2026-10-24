@@ -27,7 +27,7 @@ KNOWN = ('gaussian_noise','shot_noise','impulse_noise','speckle_noise',
          'gaussian_blur','glass_blur','defocus_blur','motion_blur','zoom_blur',
          'fog','frost','snow','spatter','brightness','contrast','saturate',
          'pixelate','jpeg_compression','elastic_transform',
-         'scaling','scale','rotation','rotate','shearing','shear',
+         'scaling','scale','rotation','rotate','rotate_img','shearing','shear',
          'piecewise_affine','piecewise_affine_transform')
 
 
@@ -44,8 +44,20 @@ def prepare_repo(path: Path, *, clone: bool=True) -> str:
     origin=subprocess.run(['git','-C',str(path),'remote','get-url','origin'],check=True,capture_output=True,text=True).stdout.strip()
     if origin.rstrip('/').removesuffix('.git').lower()!=OFFICIAL_URL.removesuffix('.git').lower():
         raise RuntimeError(f'Not the official repository: {origin}')
-    dirty=subprocess.run(['git','-C',str(path),'status','--porcelain'],check=True,capture_output=True,text=True).stdout.strip()
-    if dirty: raise RuntimeError('Official checkout contains uncommitted changes; cannot attest to source revision')
+    dirty=subprocess.run(['git','-C',str(path),'status','--porcelain','--untracked-files=all'],
+                         check=True,capture_output=True,text=True).stdout.strip()
+    # A fresh official clone may contain exactly one user-authored integration
+    # entry point. Tracked upstream files must remain untouched, and all other
+    # untracked files are rejected. The source digest is attested by the launcher.
+    if dirty:
+        bridge=(path/'perturbations'/'tempo_proposal_runner.py').resolve()
+        expected=os.environ.get('TEMPO_OFFICIAL_BRIDGE_SHA256','')
+        authorized=(Path(__file__).resolve()==bridge and
+                    dirty.splitlines()==['?? perturbations/tempo_proposal_runner.py'] and
+                    len(expected)==64 and
+                    hashlib.sha256(bridge.read_bytes()).hexdigest()==expected)
+        if not authorized:
+            raise RuntimeError('Official checkout has modified/unexpected files; refusing unverifiable benchmark: '+dirty[:400])
     sha=subprocess.run(['git','-C',str(path),'rev-parse','HEAD'],check=True,capture_output=True,text=True).stdout.strip()
     if len(sha)!=40 or any(c not in '0123456789abcdef' for c in sha.lower()):
         raise RuntimeError('Invalid upstream revision')
@@ -102,6 +114,42 @@ def adapt_skimage_gaussian(module) -> bool:
     return True
 
 
+
+def adapt_skimage_random_noise(module) -> bool:
+    """Seed upstream impulse_noise without replacing its corruption algorithm.
+
+    Modern skimage.util.random_noise uses an independent default_rng when its
+    rng parameter is omitted. Calling np.random.seed alone is insufficient.
+    Bind a module-local skimage proxy to preserve other skimage APIs and route
+    a derived NumPy legacy-RNG seed into the original skimage function.
+    """
+    package = getattr(module, 'sk', None)
+    util = getattr(package, 'util', None)
+    fn = getattr(util, 'random_noise', None)
+    if fn is None or getattr(module, '_tempo_random_noise_seed_adapter', False):
+        return False
+    parameters = inspect.signature(fn).parameters
+    keyword = 'rng' if 'rng' in parameters else 'seed' if 'seed' in parameters else None
+    if keyword is None:
+        return False
+
+    class UtilProxy:
+        def __getattr__(self, name):
+            return getattr(util, name)
+        def random_noise(self, image, *args, **kwargs):
+            if 'rng' not in kwargs and 'seed' not in kwargs:
+                kwargs[keyword] = int(np.random.randint(0, 2**32))
+            return fn(image, *args, **kwargs)
+
+    class SkimageProxy:
+        util = UtilProxy()
+        def __getattr__(self, name):
+            return getattr(package, name)
+
+    module.sk = SkimageProxy()
+    module._tempo_random_noise_seed_adapter = True
+    return True
+
 def find_module(repo: Path) -> Path:
     candidates = [p for p in (repo/'perturbations').rglob('image_perturb.py') if p.is_file()]
     if len(candidates)!=1:
@@ -139,6 +187,7 @@ def import_official(path: Path, repo: Path):
     # accept channel_axis=-1 instead. Adapt the bound function *only in the
     # loaded module*, without editing or dirtying the attested upstream Git.
     module._tempo_skimage_gaussian_compat = adapt_skimage_gaussian(module)
+    module._tempo_random_noise_seed_adapter = adapt_skimage_random_noise(module)
     return module
 
 
@@ -232,7 +281,7 @@ def preflight_official(module, names, severities, sample_bgr, host_name,
 
 
 def main(args):
-    if not 1 <= min(args.severities) <= max(args.severities) <= 5:
+    if not args.severities or not 1 <= min(args.severities) <= max(args.severities) <= 5:
         raise ValueError('Official severity must be in 1..5')
     selected_methods=[normalize_method_id(s.strip()) for s in args.methods.split(',') if s.strip()]
     if not selected_methods or any(s not in COMMON_IMAGE_METHODS for s in selected_methods):
@@ -247,6 +296,8 @@ def main(args):
     selected=[x.strip() for x in args.attacks.split(',') if x.strip()] if args.attacks else names
     if not selected:
         raise ValueError('No compatible official perturbation functions discovered')
+    if len(selected) != len(set(selected)) or len(args.severities) != len(set(args.severities)):
+        raise ValueError('Duplicate attack functions or severity levels are not permitted')
     missing=set(selected)-set(names)
     if missing:raise ValueError(f'Not declared by official source: {sorted(missing)}')
     companion=None
@@ -255,7 +306,7 @@ def main(args):
         companion=args.companion_repo
     else: companion_sha=None
     module=import_official(official_source,args.official_repo)
-    hosts=sorted(p for p in args.host_dir.glob('*.bmp') if 'lenna' not in p.name.lower() and 'lena' not in p.name.lower())
+    hosts=sorted(p for p in args.host_dir.glob('*.bmp') if p.stem.lower() not in {'lenna','lena'})
     watermarks=sorted(args.watermark_dir.glob('*.png'))
     if args.host_limit:hosts=hosts[:args.host_limit]
     if args.watermark_limit:watermarks=watermarks[:args.watermark_limit]
@@ -273,8 +324,11 @@ def main(args):
     preflight = {
         'provider': 'official_MMWatermark_Robustness',
         'official_commit': upstream_sha,
+        'execution_cwd': str(Path.cwd()),
+        'integration_entry': str(Path(__file__).resolve()),
         'official_source_sha256': hashlib.sha256(official_source.read_bytes()).hexdigest(),
         'scikit_image_gaussian_keyword_adapter': bool(module._tempo_skimage_gaussian_compat),
+        'scikit_image_random_noise_seed_adapter': bool(module._tempo_random_noise_seed_adapter),
         'image_shape': list(sample.shape),
         'requested_conditions': len(selected)*len(args.severities),
         'supported_conditions': [{'attack': name, 'severity': sev} for name, sev in supported],
@@ -283,9 +337,9 @@ def main(args):
                     'TEMPO attacks. Full external coverage requires resolving these incompatibilities.'),
     }
     save_json(out/'official_mmwatermark_preflight.json', preflight)
-    if args.strict_official_coverage and unsupported:
-        raise RuntimeError(f'{len(unsupported)} official conditions failed the 512x512 preflight; '
-                           f'see {out / "official_mmwatermark_preflight.json"}')
+    # Do not stop here in strict mode: collect all supported genuine trials,
+    # preserve their metrics, and fail the coverage gate after saving manifest.
+    # Otherwise one upstream incompatibility would discard useful evidence.
     if not supported:
         raise RuntimeError('No official upstream attack conditions passed preflight; '
                            'see official_mmwatermark_preflight.json')
@@ -347,7 +401,8 @@ def main(args):
                       'rows;',len(failures),'failed trials',flush=True)
     save_csv(out/'official_mmwatermark_raw.csv',rows)
     manifest={'provider':'official_MMWatermark_Robustness','official_url':OFFICIAL_URL,
-              'official_commit':upstream_sha,'official_source_sha256':hashlib.sha256(official_source.read_bytes()).hexdigest(),
+              'official_commit':upstream_sha,'execution_cwd':str(Path.cwd()),
+              'integration_entry':str(Path(__file__).resolve()),'official_source_sha256':hashlib.sha256(official_source.read_bytes()).hexdigest(),
               'companion_commit':companion_sha,'selected_attack_functions':selected,
               'severities':args.severities,'methods':selected_methods,
               'hosts':[x.name for x in hosts],'watermarks':[x.name for x in watermarks],
@@ -356,9 +411,11 @@ def main(args):
               'expected_rows':expected,'completed_rows':len(rows),'failures':failures,
               'preflight_unsupported_conditions':unsupported,
               'scikit_image_gaussian_keyword_adapter':bool(module._tempo_skimage_gaussian_compat),
+              'scikit_image_random_noise_seed_adapter':bool(module._tempo_random_noise_seed_adapter),
               'complete':len(rows)==expected and not failures,
               'full_coverage':len(rows)==expected_full and not failures and not unsupported,
-              'scope':'official perturbations, not official model baselines; provider IDs are distinct from canonical attacks'}
+              'scope':'TEMPO proposal evaluated using original MMWatermark-Robustness perturbations; not an upstream model baseline',
+              'notebook_method_source':'TEMPO src/realtime_watermark; no upstream watermark model weights were used'}
     save_json(out/'official_mmwatermark_manifest.json',manifest)
     save_json(out/'official_mmwatermark_progress.json', {
         'status': 'COMPLETED_ALL_REQUESTED' if manifest['full_coverage'] else
@@ -375,6 +432,8 @@ def main(args):
               'See official_mmwatermark_preflight.json.',flush=True)
     if failures:
         raise RuntimeError(f'{len(failures)} official perturbation/decode trials failed; see manifest')
+    if args.strict_official_coverage and not manifest['full_coverage']:
+        raise RuntimeError('Official provider did not achieve full requested coverage; see manifest')
 
 
 if __name__=='__main__':

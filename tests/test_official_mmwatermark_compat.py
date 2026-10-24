@@ -102,3 +102,31 @@ def test_preflight_keeps_supported_conditions_and_records_failed_ones():
     assert unsupported[0]['severity'] == 1
     assert 'upstream incompatibility' in unsupported[0]['reason']
     assert 'changed geometry' in unsupported[1]['reason']
+
+
+def test_upstream_rotate_img_is_discovered(tmp_path):
+    mod = _adapter()
+    path = tmp_path / 'image_perturb.py'
+    path.write_text('def gaussian_noise(x, severity): return x\n'
+                    'def rotate_img(x, severity=5): return x\n'
+                    'def unrelated(x, severity): return x\n', encoding='utf8')
+    assert mod.discover_names(path) == ['gaussian_noise','rotate_img']
+
+
+def test_upstream_skimage_random_noise_is_repeatably_seeded(tmp_path):
+    mod = _adapter()
+    path = tmp_path / 'image_perturb.py'
+    path.write_text('import skimage as sk\n'
+                    'def impulse_noise(x, severity):\n'
+                    '    return sk.util.random_noise(x/255.0, mode="s&p", amount=0.2)*255\n',
+                    encoding='utf8')
+    official = mod.import_official(path, tmp_path)
+    assert official._tempo_random_noise_seed_adapter
+    x = np.full((24, 24, 3), 127, dtype=np.uint8)
+    bgr = cv2.cvtColor(x, cv2.COLOR_RGB2BGR)
+    a = mod.call_official(official.impulse_noise, bgr, 1, seed=2026)
+    b = mod.call_official(official.impulse_noise, bgr, 1, seed=2026)
+    c = mod.call_official(official.impulse_noise, bgr, 1, seed=2027)
+    assert np.array_equal(a, b)
+    assert not np.array_equal(a, c)
+    assert path.read_text().startswith('import skimage as sk')

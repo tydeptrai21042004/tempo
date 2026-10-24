@@ -38,7 +38,9 @@ def main() -> None:
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    hosts = sorted(path for path in host_dir.glob("*.bmp") if path.is_file())
+    hosts = sorted(path for path in host_dir.glob("*.bmp")
+                   if path.is_file() and not any(x in path.name.casefold()
+                                                  for x in ('lena', 'lenna')))
     watermarks = sorted(path for path in watermark_dir.glob("*.png") if path.is_file())
     if args.host_limit > 0:
         hosts = hosts[: args.host_limit]
@@ -163,7 +165,7 @@ def main() -> None:
         {
             "host_rule": {
                 "extension": ".bmp",
-                "excluded_name_substring": "lena",
+                "excluded_name_substrings": ["lena", "lenna"],
                 "host_count": len(hosts),
                 "hosts": [str(path) for path in hosts],
             },
