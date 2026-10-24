@@ -1,0 +1,47 @@
+TEMPO original MMWatermark full-coverage + frozen 720p 30 FPS scientific gate
+===========================================================================
+
+PURPOSE
+- Keep TEMPO's 12 hosts (3 development, 9 held out) and both real 64x64 watermarks.
+- Clone genuine Jielin-Qiu MMWatermark-Robustness and MM_Robustness repos.
+- Exercise all 23 original standard 512x512 image corruption functions with
+  severity 1,2,3,4,5 on the marked proposal output, plus the clean condition.
+  Expect exactly 9*2*(23*5+1)=2088 independent records. No attack substitution.
+- Exclude only legacy upstream variants 'frost_224', 'snow_224',
+  'motion_blur_ori' from the fixed 512x512 common image protocol; these are
+  not the same 23 standardized attacks. Their existence is noted in audit.
+- Run a separate 720p JPEG70 real VIDEO benchmark using original verified
+  native-resolution source, frozen selected proposal step, both watermarks.
+  Warming is outside timed region. Two full 300-frame trials, CPU only.
+- Scientific PASS is printed ONLY when all 2088 genuine MMW trials, reviewer
+  completeness, final held-out PSNR >=50 and clean accuracy=1, and true
+  >=30 FPS with no frame drops, service and end-to-end latency p95 <=33.333ms
+  hold. A Python exit code 0 on its own is not scientific PASS.
+
+IMPORTANT LIMITATIONS
+The FPS trial measures predecoded video frames streamed in real time through
+embed -> JPEG70 encode/decode -> blind extract. It does not include incoming
+file/video decoding or final disk/network video encoding. CPU platform and
+OS scheduler matter; this patch cannot promise 30 FPS before Kaggle measures it.
+The dataset and MMW corruptions are not changed. The patch does not tune
+frozen proposal settings on the held-out test set or fabricate missing baselines.
+
+INSTALL / COMMIT
+1. Extract ONLY these patch files into the root of the NEWEST local TEMPO repo.
+2. In that repo run:
+     python APPLY_TEMPO_SCIENTIFIC_PATCH.py
+     python scripts/verify_source_manifest.py
+     python -m pytest -q tests/test_strict_scientific_gate.py tests/test_stream_memory_720p.py tests/test_stream_pipeline.py
+3. Verify diffs, then commit and push:
+     git add .
+     git commit -m "Add original MMW 23-attack and strict 720p scientific gate"
+     git push origin main
+4. In Kaggle: Accelerator=None, Internet=On. Copy ALL source code from
+     KAGGLE_TEMPO_STRICT_FULL_ONE_CELL.py
+   into a single Kaggle notebook cell and run. It CLONES your updated main.
+5. Final archive and status printed in Kaggle /kaggle/working.
+   Check run_metadata/scientific_gate.json for explicit PASS vs FAIL details.
+
+If strict MMW fails, read original_mmw....manifest.json and preflight.json.
+If strict FPS fails, inspect extra/frozen_720p_30fps/frozen_fps_manifest.json
+and the per-frame trace CSVs. Missing genuine external baselines remain missing.
