@@ -1,0 +1,47 @@
+TEMPO: verified regression fix for GitHub commit a5a5785b7ea7b4d16c6b0ac203a9e6d6c5fe8d3f
+
+Apply to the ROOT of https://github.com/tydeptrai21042004/tempo:
+
+1) Extract the four included repository paths into your local clone,
+   replacing the matching originals. DO NOT upload this instructions
+   file to the repository if its cleanliness policy changes.
+2) Verify BEFORE pushing:
+
+   PYTHONPATH=src:. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q \
+      tests/test_stream_memory_720p.py tests/test_stream_pipeline.py \
+      tests/test_strict_scientific_gate.py tests/test_official_repo_entry.py
+   python scripts/verify_source_manifest.py
+
+3) git add src/realtime_watermark/stream_pipeline.py \
+      tests/test_stream_memory_720p.py KAGGLE_TEMPO_STRICT_FULL_ONE_CELL.py \
+      SOURCE_MANIFEST.sha256
+   git commit -m "Fix stream trace memory retention and Kaggle exit status"
+   git push origin main
+
+4) Start a NEW Kaggle CPU session with Internet enabled and run the short
+   launcher provided in ChatGPT's response. This downloads the latest runner
+   from GitHub, so pushing is required BEFORE starting Kaggle.
+
+PROBLEM ROOT CAUSE:
+- _run_realtime retained two full-resolution image arrays in each row of its
+  trace even though their image quality/extraction stats were already computed.
+- test_stream_memory_720p caught that behavior and caused Stage 3 pytest to stop.
+- The wrapper caught exceptions and printed FAILED status but returned process
+  exit code 0, masking an operational failure.
+
+FIXES:
+- Strip marked and attacked image buffers from both realtime and virtual
+  paths, including when a test/mock injects the arrays.
+- _process_packet returns only metrics and the small recovered watermark.
+- A native/reviewer/upstream/FPS/scientific failure now gives a nonzero runner
+  exit code, while evidence ZIP is still created in finally.
+- New tests include virtual traces and dropped-channel traces.
+- SOURCE_MANIFEST.sha256 updated to match source changes.
+
+VERIFIED IN THIS ENVIRONMENT:
+- 113 targeted pytest cases PASSED.
+- Source manifest 233 entries VERIFIED, 0 mismatches / 0 missing.
+- Full pytest suite was attempted but did not complete within local tool budget.
+- The full 2-hour+ Kaggle benchmark, official external cloning and performance
+  criteria have NOT been re-run or guaranteed by this source patch.
+- No changes to proposed watermark math, baselines or attack definitions.

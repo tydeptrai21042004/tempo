@@ -202,6 +202,7 @@ def actual_video():
 
 
 threading.Thread(target=checkpoint_worker, daemon=True).start()
+run_exit_code = 0
 try:
     if not launch('00_clone_tempo', ['git','clone','--depth','1','--branch','main',GITHUB,REPO],reserve=1200):
         raise RuntimeError('GitHub clone failed')
@@ -382,6 +383,7 @@ try:
         '--run-root',ROOT,'--out',META/'scientific_gate.json',
         '--target-fps',30,'--target-psnr',50],env,reserve=220)
     if not strict_ok:
+        run_exit_code = 2
         print('SCIENTIFIC TARGETS FAILED: inspect run_metadata/scientific_gate.json',flush=True)
         stages['SCIENTIFIC_FINAL_VERDICT']={'status':'FAILED_TARGETS','gate':str(META/'scientific_gate.json')}
     else:
@@ -389,9 +391,25 @@ try:
         stages['SCIENTIFIC_FINAL_VERDICT']={'status':'PASS','gate':str(META/'scientific_gate.json')}
     status_write()
 except BaseException as exc:
+    run_exit_code = 1
+    stages['SCIENTIFIC_FINAL_VERDICT'] = {
+        'status': 'NOT_VERIFIED', 'reason': 'BLOCKING_ERROR',
+        'error': repr(exc),
+    }
     print('UNEXPECTED / BLOCKING ERROR:',repr(exc),flush=True)
     (META/'wrapper_error.txt').write_text(traceback.format_exc(),encoding='utf8')
 finally:
+    # Exit nonzero for any mandatory stage that failed even if an independent
+    # scientific gate unexpectedly reported PASS. Optional external CSV import
+    # remains explicitly NOT_RUN rather than being presented as completed.
+    failing = {
+        name: record['status'] for name, record in stages.items()
+        if isinstance(record, dict)
+        and str(record.get('status', '')).startswith(('FAILED', 'STOPPED', 'PARTIAL'))
+    }
+    if failing and run_exit_code == 0:
+        run_exit_code = 3
+        print('UNSUCCESSFUL STAGES:', json.dumps(failing, indent=2), flush=True)
     checkpoint_stop.set()
     status_write()
     archive(FINAL_ZIP)
@@ -404,3 +422,7 @@ finally:
     print(json.dumps({k:v.get('status') for k,v in stages.items()},indent=2),flush=True)
     print('SCIENTIFIC VERDICT:',stages.get('SCIENTIFIC_FINAL_VERDICT',{}).get('status','NOT_VERIFIED'),flush=True)
     print('Check scientific_gate.json: zero failed scientific checks required for PASS.',flush=True)
+    print('RUN EXIT CODE:',run_exit_code,flush=True)
+
+# Do not silently return 0 after pytest, data, upstream or scientific failures.
+raise SystemExit(run_exit_code)

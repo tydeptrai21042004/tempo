@@ -160,8 +160,6 @@ def _process_packet(
         return {
             "frame_id": packet.frame_id,
             "arrival_s": packet.arrival_s,
-            "marked": marked,
-            "attacked": None,
             "recovered": None,
             "embed_ms": (t1 - t0) * 1000.0,
             "channel_ms": (t2 - t1) * 1000.0,
@@ -185,8 +183,6 @@ def _process_packet(
     return {
         "frame_id": packet.frame_id,
         "arrival_s": packet.arrival_s,
-        "marked": marked,
-        "attacked": attacked,
         "recovered": recovered,
         "embed_ms": (t1 - t0) * 1000.0,
         "channel_ms": (t2 - t1) * 1000.0,
@@ -258,6 +254,11 @@ def _run_virtual(
             packet, method_id=method_id, watermark=watermark, channel=channel,
             seed=seed, step=step, method_params=method_params,
         )
+        # Full-resolution marked/attacked arrays are no longer needed once
+        # PSNR and extraction have been computed by _process_packet. Do not
+        # retain them for every frame in virtual replay traces.
+        result.pop("marked", None)
+        result.pop("attacked", None)
         end_s = start_s + result["service_ms"] / 1000.0
 
         # Reproduce every periodic arrival that occurred while this frame was in service.
@@ -340,6 +341,10 @@ def _run_realtime(
                 packet, method_id=method_id, watermark=watermark, channel=channel,
                 seed=seed, step=step, method_params=method_params,
             )
+            # Keep only per-frame statistics and the small recovered watermark.
+            # Otherwise each 720p frame retains two ~2.6 MiB RGB buffers.
+            result.pop("marked", None)
+            result.pop("attacked", None)
             end = time.perf_counter()
             with lock:
                 traces.append({
