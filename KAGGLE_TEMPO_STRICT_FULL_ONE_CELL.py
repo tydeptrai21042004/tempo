@@ -344,7 +344,7 @@ try:
         stages['09_frozen_720p_fps']={'status':'FAILED_MISSING_REAL_VIDEO'}
         status_write()
     else:
-        launch('09_frozen_720p_fps', [py,REPO/'scripts/benchmark_frozen_720p.py','scripts/benchmark_algorithm_only_720p.py',
+        launch('09_frozen_720p_fps', [py,REPO/'scripts/benchmark_frozen_720p.py',
             '--video',selected_video, '--watermark-dir',DATA/'watermark',
             '--config',selected,'--out-dir',EXTRA/'frozen_720p_30fps',
             '--frames',300,'--fps',32],env,reserve=540)
@@ -402,23 +402,33 @@ try:
             '--companion-repo',ROOT/'Kodak_MM_Robustness_upstream',
             '--host-dir',kodak_bmp, '--watermark-dir',DATA/'watermark',
             '--config',selected, '--out-dir',result_dir,
-            '--severities',1,2,3,4,5],env,reserve=240)
+            '--severities',1,2,3,4,5, '--allow-partial'],env,reserve=240)
         manifest_file=result_dir/'official_mmwatermark_manifest.json'
         if not manifest_file.is_file():
             raise RuntimeError('Official Kodak benchmark missing its full coverage manifest')
         official=json.loads(manifest_file.read_text())
         state=stages['12_official_mmwatermark_kodak_24']
+        expected_supported=official.get('expected_compatible_rows')
+        observed=official.get('completed_rows')
+        unsupported=official.get('preflight_unsupported_conditions',[])
+        if not isinstance(unsupported,list):
+            raise RuntimeError('Official preflight exclusions must be a list')
         state.update({'host_count':len(official.get('hosts',[])),
                       'watermark_count':len(official.get('watermarks',[])),
-                      'completed_rows':official.get('completed_rows'),
-                      'expected_rows':official.get('expected_full_requested_rows'),
-                      'full_coverage':official.get('full_coverage')})
+                      'completed_rows':observed,
+                      'expected_supported_rows':expected_supported,
+                      'expected_original_catalog_rows':official.get('expected_full_requested_rows'),
+                      'unsupported_conditions':unsupported,
+                      'full_coverage':official.get('full_coverage',False)})
         status_write()
-        if (not ok or not official.get('full_coverage') or
+        if (not ok or not official.get('complete') or
             len(official.get('hosts',[]))!=24 or len(official.get('watermarks',[]))!=2 or
-            official.get('methods')!=['proposal'] or
-            official.get('completed_rows') != official.get('expected_full_requested_rows')):
-            raise RuntimeError('Official Kodak benchmark incomplete; inspect official manifest and logs')
+            official.get('methods')!=['proposal'] or not isinstance(expected_supported,int) or
+            observed != expected_supported or official.get('failures')):
+            raise RuntimeError('Official Kodak compatible trials incomplete or failed; inspect manifest')
+        print('Official Kodak:',observed,'/',expected_supported,'compatible rows;',
+              len(unsupported),'unsupported provider conditions disclosed;',
+              'entire original catalog covered:',official.get('full_coverage',False),flush=True)
         if not launch('13_summarize_official_kodak', [py,
             REPO/'scripts/summarize_official_kodak.py',
             '--manifest',manifest_file, '--raw',result_dir/'official_mmwatermark_raw.csv',

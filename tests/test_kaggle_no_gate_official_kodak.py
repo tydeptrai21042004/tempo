@@ -31,7 +31,8 @@ def test_official_summary_fails_on_missing_row_and_reports_all(tmp_path):
     wm_names=['watermark_001_Cc.logo.circle.png','watermark_002_wm.png']
     attack_names=['clean','mmw::jpeg_compression::severity1']
     manifest={'full_coverage':True,'hosts':host_names,'watermarks':wm_names,
-              'methods':['proposal'],'selected_attack_functions':['jpeg_compression'],
+              'methods':['proposal'],'complete':True,'expected_compatible_rows':96,'failures':[],
+              'preflight_unsupported_conditions':[], 'selected_attack_functions':['jpeg_compression'],
               'severities':[1],'completed_rows':96,'expected_full_requested_rows':96}
     manifest_file=tmp_path/'manifest.json';manifest_file.write_text(json.dumps(manifest))
     raw=tmp_path/'official.csv'
