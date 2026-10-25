@@ -1,0 +1,31 @@
+{
+  "base_repo": "tempo-main (1).zip",
+  "base_commit": "a839bb73d117440476e3d032835c9bfb595a9957",
+  "scope": "24 Kodak images, 4096 bits, proposal-only external + optional original official MMW catalog",
+  "new_files": {
+    "scripts/download_full_kodak.py": {
+      "bytes": 6109,
+      "sha256": "561fe7cf8863933212efb04a28c691d0e4fa73fbe0899da2f37eb0f5d639d9f2"
+    },
+    "scripts/run_full_kodak_external.py": {
+      "bytes": 12472,
+      "sha256": "e1733c3fe57db22528799f5b326f4bf80e4e13e5f24591e49fe14cf98add47f0"
+    },
+    "scripts/prepare_kodak_official_512.py": {
+      "bytes": 2145,
+      "sha256": "779aeafd4d9d90aed048252405069a961a562dbf9ca7f2a6f91f9a6dd5ef973d"
+    },
+    "tests/test_kodak_full_external.py": {
+      "bytes": 3384,
+      "sha256": "4b385f28f5d4a25668f008065be3eba2d3eb95de470fdcd0b27315266711c9b7"
+    },
+    "KAGGLE_KODAK_FULL_EXTERNAL_ONE_CELL.py": {
+      "bytes": 4177,
+      "sha256": "9edc53f83de05e65cf449edb7a92e43d4d4c0c8f4f7da1446ec3868fe684983b"
+    },
+    "KODAK_FULL_EXTERNAL_PATCH_README.txt": {
+      "bytes": 6140,
+      "sha256": "7a3591a06f41fcb27e97d30f789314823d06c79c51c20d2ff61fa944a383ce9c"
+    }
+  }
+}
