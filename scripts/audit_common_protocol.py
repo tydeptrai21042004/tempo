@@ -9,7 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 import numpy as np
-from realtime_watermark.attack_manifest import manifest_summary
+from realtime_watermark.attack_manifest import manifest_summary, reviewer_manifest_summary
 from realtime_watermark.core import default_attacks
 from realtime_watermark.registry import BASELINE_METHODS, PAPER_NATIVE_METHODS
 from realtime_watermark.paper_fidelity import fidelity_status
@@ -20,7 +20,8 @@ def audit(preset: str = 'unified', compare_legacy: bool = True) -> dict:
     names = [n for n, _ in attacks]
     if len(set(names)) != len(names) or not names or names[0] != 'clean':
         raise RuntimeError('Attack names must be unique; clean must be first')
-    expected = manifest_summary() if preset == 'unified' else None
+    expected = (manifest_summary() if preset == 'unified' else
+                reviewer_manifest_summary() if preset == 'reviewer46' else None)
     if expected is not None and names != expected['attack_ids']:
         raise RuntimeError('Unified attack protocol does not match frozen manifest')
     rng = np.random.default_rng(20)
@@ -61,7 +62,7 @@ def audit(preset: str = 'unified', compare_legacy: bool = True) -> dict:
             'total_conditions': len(names),
             'attacked_conditions': len(names)-1,
             'baseline_disclosure': baselines,
-            'primary_rank_detector_assumption': 'blind only',
+            'primary_rank_detector_assumption': 'method-native detector retained; rankings must disclose detector tier',
             'method_code_changes': 'none in embedding/extraction',
             'status':'preflight_passed_not_full_benchmark'}
 
@@ -69,7 +70,7 @@ def audit(preset: str = 'unified', compare_legacy: bool = True) -> dict:
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output', type=Path, required=True)
-    p.add_argument('--attack-preset', default='unified', choices=['unified','stress','standard','smoke'])
+    p.add_argument('--attack-preset', default='reviewer46', choices=['reviewer46','unified','stress','standard','smoke'])
     args = p.parse_args()
     result = audit(args.attack_preset)
     args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -305,7 +305,7 @@ def parser():
     p.add_argument('--out-dir',default='reports/proposal_fps_ablation')
     p.add_argument('--group',choices=sorted(GROUPS),default='quick')
     p.add_argument('--variants',default=None,help='Comma-separated explicit variant names; overrides --group')
-    p.add_argument('--attack-preset',choices=['smoke','standard','extended','stress'],default='standard')
+    p.add_argument('--attack-preset',choices=['smoke','standard','extended','stress','reviewer46'],default="reviewer46")
     p.add_argument('--attacks',default='clean,jpeg70,rotate1,translate4_4',help='Comma-separated attack names; pass an empty string to use every attack in the preset')
     p.add_argument('--max-hosts',type=int,default=0)
     p.add_argument('--split',choices=['development','holdout','all'],default='development')

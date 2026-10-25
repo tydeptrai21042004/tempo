@@ -12,7 +12,8 @@ from PIL import Image
 from realtime_watermark.core import load_binary_watermark,psnr,nc_binary,bit_accuracy
 from realtime_watermark.proposals.jilp_qim.config import JILPQIMConfig
 from realtime_watermark.proposals.jilp_qim.method import embed_proposal,extract_jilp_qim
-from reviewer_experiments import jpeg,warp,csv_write
+from reviewer_experiments import csv_write
+from realtime_watermark.attack_manifest import reviewer_attacks, reviewer_manifest_summary
 
 
 def run(args):
@@ -35,7 +36,8 @@ def run(args):
                 t=time.perf_counter()
                 y,k=embed_proposal(host,wm,seed=args.seed,method_params=candidate.to_dict())
                 emb_ms=1000*(time.perf_counter()-t)
-                for attack,received in [('clean',y),('jpeg40',jpeg(y,40)),('rotation2p5',warp(y,angle=2.5))]:
+                for attack, attack_fn in [(name, dict(reviewer_attacks())[name]) for name in ('clean','jpeg40','rotate_2p5')]:
+                    received = attack_fn(y)
                     t=time.perf_counter()
                     dec=extract_jilp_qim(received,k)
                     ext_ms=1000*(time.perf_counter()-t)
@@ -52,6 +54,7 @@ def run(args):
       'factors':{k:list(map(float,v)) for k,v in factors},
       'hosts':[x.name for x in hosts], 'watermarks':[x.name for x in wms],
       'rows':len(rows),'no_test_host_access':True,
+      'attack_manifest_sha256':reviewer_manifest_summary()['sha256'],
       'limitations':'2-level local factorial scans are not a global hyperparameter optimum'},indent=2))
     print(f'Wrote {len(rows)} joint sensitivity observations')
 
@@ -61,4 +64,5 @@ if __name__=='__main__':
     p.add_argument('--config',required=True);p.add_argument('--out-dir',required=True)
     p.add_argument('--max-hosts',type=int,default=2);p.add_argument('--max-watermarks',type=int,default=2)
     p.add_argument('--seed',type=int,default=2026)
+    p.add_argument('--attack-preset',choices=['reviewer46'],default='reviewer46')
     run(p.parse_args())

@@ -49,7 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--target-psnr", type=float, default=45.0)
     p.add_argument("--timing-repeats", type=int, default=30)
     p.add_argument("--timing-warmups", type=int, default=5)
-    p.add_argument("--attack-preset", choices=["smoke", "standard", "extended", "stress", "unified"], default="standard")
+    p.add_argument("--attack-preset", choices=["smoke", "standard", "extended", "stress", "unified", "reviewer46"], default="reviewer46")
     p.add_argument("--out-dir", default="results/fair_isolated")
     p.add_argument("--threads", type=int, default=1)
     p.add_argument("--proposal-config", default=None)

@@ -11,26 +11,16 @@ import numpy as np
 from reviewer_expansion_common import *
 from reviewer_experiments import jpeg, warp
 
-ATTACKS={
- 'clean':lambda x:x,
- 'jpeg70':lambda x:jpeg(x,70),
- 'rotation0p5':lambda x:warp(x,angle=.5),
- 'rotation1p25':lambda x:warp(x,angle=1.25),
- 'rotation2p5':lambda x:warp(x,angle=2.5),
- 'rotation3p25':lambda x:warp(x,angle=3.25),
- 'rotation7p5':lambda x:warp(x,angle=7.5),
- 'rotation15':lambda x:warp(x,angle=15),
- 'subpixel0p5':lambda x:warp(x,dx=.5,dy=.5),
- 'scale1p02':lambda x:warp(x,scale=1.02),
- 'shear0p02':lambda x:warp(x,shear=.02),
-}
+from realtime_watermark.attack_manifest import reviewer_attacks, reviewer_manifest_summary
+ATTACKS = dict(reviewer_attacks())
+
 
 def run(a):
     init_cpu()
     out=Path(a.out_dir)
     hosts,marks=dataset(a)
     cfg=config(a.config)
-    choices=('clean','jpeg70','rotation2p5','subpixel0p5') if a.quick else ATTACKS
+    choices=('clean','jpeg70','rotate_2p5','subpixel_translate_0p5_0p5') if a.quick else ATTACKS
     rows=[]
     for hp in hosts:
         im=load_host(hp)
@@ -73,7 +63,7 @@ def run(a):
     write_json(out/'manifest.json',{'status':'complete','cases':len(rows),
       'helpful_definition':f'forced search NC exceeds raw by >{a.min_gain}',
       'caveat':'Forced search is a diagnostic counterfactual and not the deployed default; no general geometric invariance claim',
-      'hosts':{p.name:md5_file(p) for p in hosts},**info()})
+      'hosts':{p.name:md5_file(p) for p in hosts},'attack_manifest_sha256':reviewer_manifest_summary()['sha256'],**info()})
 
 
 def parser():

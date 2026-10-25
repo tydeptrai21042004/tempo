@@ -101,30 +101,14 @@ def blur(image: np.ndarray, sigma: float) -> np.ndarray:
 
 
 def attacks(quick: bool):
-    seq = [('rot_2.5',lambda y: warp(y,angle=2.5)),
-           ('translate_1',lambda y: warp(y,dy=1)),
-           ('subpixel_0.5',lambda y: warp(y,dy=.5,dx=.5)),
-           ('jpeg_40',lambda y: jpeg(y,40)),
-           ('gaussian_var_0p003',lambda y: gaussian_variance(y,.003)),
-           ('speckle_var_0p001',lambda y: speckle_variance(y,.001)),
-           ('payload_zero',lambda y,eta: attenuation(y,eta,'payload',1.0)),
-           ('pilot_zero',lambda y,eta: attenuation(y,eta,'pilot',1.0))]
-    if not quick:
-        seq += [('rot_0.5',lambda y:warp(y,angle=.5)),
-                ('rot_7.5',lambda y:warp(y,angle=7.5)),
-                ('rot_15',lambda y:warp(y,angle=15)),
-                ('scale_0.9',lambda y:warp(y,scale=.9)),
-                ('scale_1.1',lambda y:warp(y,scale=1.1)),
-                ('shear_0.05',lambda y:warp(y,shear=.05)),
-                ('translate_8',lambda y:warp(y,dy=8)),
-                ('translate_12',lambda y:warp(y,dy=12)),
-                ('jpeg_30',lambda y:jpeg(y,30)),
-                ('gaussian_var_0p05',lambda y:gaussian_variance(y,.05)),
-                ('speckle_var_0p03',lambda y:speckle_variance(y,.03)),
-                ('blur_sigma_1p5',lambda y:blur(y,1.5)),
-                ('payload_half',lambda y,eta:attenuation(y,eta,'payload',.5)),
-                ('pilot_half',lambda y,eta:attenuation(y,eta,'pilot',.5))]
-    return seq
+    """Main supplementary attacks from the SAME internal frozen common registry.
+
+    Channel/payload/pilot targeted attenuation belongs to reviewer_attack_budget,
+    not the generic 46-condition ranking; this prevents extra hidden attacks.
+    Quick mode uses the exact same manifest rather than an incomparable preset.
+    """
+    from realtime_watermark.attack_manifest import reviewer_attacks
+    return reviewer_attacks()[1:]  # 'clean' evaluated once explicitly below
 
 
 def aggregate_uncertainty(rows: list[dict], *, seed: int, boot: int=500) -> list[dict]:
@@ -160,7 +144,7 @@ def run(args):
     if args.max_hosts: host_paths=host_paths[:args.max_hosts]
     if args.max_watermarks: wm_paths=wm_paths[:args.max_watermarks]
     if not host_paths or not wm_paths: raise RuntimeError('Missing BMP hosts or PNG watermarks')
-    rows=[]; security=[]; ortho=[]; capacity=[]
+    rows=[]; security=[]; ortho=[]; capacity=[]; targeted=[]
     for wm_i,wm_path in enumerate(wm_paths):
         wm=load_binary_watermark(wm_path,size=64)
         for host_path in host_paths:
@@ -254,6 +238,20 @@ def run(args):
                 except Exception as e:
                     rows.append({'host':host_path.name,'watermark':wm_path.name,'attack':label,
                                  'status':'failed','error':str(e)})
+            # SPECIAL-PURPOSE PUBLIC CARRIER ATTENUATION DIAGNOSTIC.
+            # Deliberately kept OUTSIDE the 46-condition matched ranking: its
+            # geometry depends on a public DCT direction and probes a mechanism.
+            for carrier in ('payload','pilot'):
+                for fraction in (.5,1.0):
+                    weakened=attenuation(marked,eta,carrier,fraction)
+                    recovered,metadata=extract_jilp_qim(weakened,key,return_meta=True)
+                    targeted.append({'host':host_path.name,'watermark':wm_path.name,
+                        'target':carrier,'fraction':fraction,'payload_bits':4096,
+                        'psnr_vs_marked':float(psnr(marked,weakened)),
+                        'nc':float(nc_binary(wm,recovered)),
+                        'ber':float(1-bit_accuracy(wm,recovered)),
+                        'extraction_path':metadata.get('path',''),
+                        'scope':'targeted_public_carrier_probe_not_generic_ranking'})
             # Detect claimed payload, not merely decode an arbitrary bitstring.
             for label,received,kparams in [
                 ('marked_correct_key',marked,key_params),
@@ -282,9 +280,11 @@ def run(args):
                 start=time.perf_counter()
                 y,k=embed_proposal(host,smaller,seed=args.seed+wm_i*1000003,method_params=config.to_dict())
                 embed_ms=(time.perf_counter()-start)*1000
-                cases=[('clean',y),('jpeg40',jpeg(y,40)),('rotate_2p5',warp(y,angle=2.5))]
+                from realtime_watermark.attack_manifest import reviewer_attacks
+                canonical = dict(reviewer_attacks())
+                cases=[(label, canonical[label](y)) for label in ('clean','jpeg40','rotate_2p5')]
                 if args.mode=='full':
-                    cases += [('gaussian_var_0p003',gaussian_variance(y,.003))]
+                    cases += [('gaussian_variance_0p003',canonical['gaussian_variance_0p003'](y))]
                 for attack_label,received in cases:
                     start=time.perf_counter()
                     rec=extract_jilp_qim(received,k)
@@ -297,6 +297,7 @@ def run(args):
                                      'embed_ms':embed_ms,'extract_ms':extract_ms,
                                      'clean_bit_accuracy':float(bit_accuracy(smaller,rec)) if attack_label=='clean' else ''})
     csv_write(output/'geometry_and_targeted_attacks.csv',rows)
+    csv_write(output/'targeted_carrier_interference.csv',targeted)
     geometry_groups=defaultdict(list)
     for rr in rows:
         if rr.get('status')=='ok' and rr.get('kind')=='attack':
@@ -332,6 +333,9 @@ def run(args):
               'host_paths':[str(p) for p in host_paths],
               'watermark_paths':[str(p) for p in wm_paths],
               'attack_cases':len(attacks(args.mode=='quick'))+1,
+              'attack_protocol':'reviewer46',
+              'separate_targeted_carrier_cases':len(targeted),
+              'targeted_carrier_scope':'analytic mechanism test; never enter generic 46-attack ranking',
               'expected_attack_rows':len(host_paths)*len(wm_paths)*(len(attacks(args.mode=='quick'))+1),
               'actual_attack_rows':len(rows),'failed_attack_rows':sum(x.get('status')!='ok' for x in rows),
               'python':platform.python_version(), 'numpy':np.__version__,
@@ -352,6 +356,7 @@ if __name__ == '__main__':
     p.add_argument('--out-dir',required=True)
     p.add_argument('--mode',choices=['quick','full'],default='quick')
     p.add_argument('--seed',type=int,default=2026)
+    p.add_argument('--attack-preset',choices=['reviewer46'],default='reviewer46')
     p.add_argument('--max-hosts',type=int,default=0)
     p.add_argument('--max-watermarks',type=int,default=0)
     p.add_argument('--bootstrap',type=int,default=500)

@@ -117,8 +117,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timing-repeats", type=int, default=10)
     parser.add_argument("--timing-warmups", type=int, default=3)
     parser.add_argument(
-        "--attack-preset", choices=["smoke", "standard", "extended", "stress", "unified"],
-        default="stress",
+        "--attack-preset", choices=["smoke", "standard", "extended", "stress", "unified", "reviewer46"],
+        default="reviewer46",
     )
     return parser
 

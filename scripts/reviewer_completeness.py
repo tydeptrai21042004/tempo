@@ -55,6 +55,13 @@ def check(root:Path,mode='full'):
             'pilot_lattice_unresolved','pilot_coordinate_difference_final_vs_pilot_stage_mean')) for r in orth),
            'Integer pilot counters must come from actual integer_pilot_* params, not missing keys defaulted to zero')
     geo=rows(root/'reviewer_experiments'/'geometry_and_targeted_attacks.csv')
+    carrier_rows=rows(root/'reviewer_experiments'/'targeted_carrier_interference.csv')
+    targets={(r.get('target'),r.get('fraction')) for r in carrier_rows}
+    record('targeted_carrier_attenuation',bool(carrier_rows) and
+        {('payload','1.0'),('pilot','1.0')}.issubset(targets) and
+        all(r.get('scope')=='targeted_public_carrier_probe_not_generic_ranking'
+            and r.get('payload_bits')=='4096' for r in carrier_rows),
+        'Public payload/pilot carrier attenuation experiment missing; must stay outside shared 46-condition ranking')
     record('sync_harm_and_raw_vs_aligned',bool(geo) and all(
         'sync_harmed_nc' in r and r.get('pilot_score_raw','')!='' and
         r.get('raw_bit_accuracy','')!='' and r.get('sync_gain_nc','')!=''
@@ -181,9 +188,9 @@ def check(root:Path,mode='full'):
         'integer rejection extremes':'integer_rejection_denominators',
         'real-video temporal evidence':'video_both_watermarks_all_clips','temporal majority limits':'temporal_voting','joint parameter coupling':'joint_parameter_coupling',
         'strong geometry':'offgrid_and_targeted_attacks','capacity':'capacity_attack_vs_payload',
-        'adversarial pilot interference':'offgrid_and_targeted_attacks'},
+        'adversarial pilot interference':'targeted_carrier_attenuation'},
       'Original Reviewer 5':{'off-grid rotation':'offgrid_and_targeted_attacks',
-        'targeted DCT suppression':'offgrid_and_targeted_attacks',
+        'targeted DCT suppression':'targeted_carrier_attenuation',
         'ROC/FPR':'threshold_calibrated_detection','recent video baselines':'recent_independent_blind_video_baselines',
         'live 4096-bit FPS':'real_video_stream_deadlines','matched PSNR':'matched_psnr_same_case_paired'},
       'Example DWT-Hessenberg review':{'independent tuning':'data_disjoint',

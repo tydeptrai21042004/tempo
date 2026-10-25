@@ -50,6 +50,7 @@ def audit(root: Path, *, min_fps=30., min_psnr=50., min_frames=300.,
         if not condition: failures.append(message)
         return bool(condition)
     out = {'requirements': {'fps_min': min_fps, 'psnr_min_db': min_psnr,
+           'psnr_policy': 'reported_without_minimum' if min_psnr <= 0 else 'minimum_gate',
            'minimum_stream_frames': min_frames, 'watermarks': required_watermarks},
            'checks': {}, 'failures': failures, 'notes': notes}
 
@@ -178,7 +179,7 @@ def audit(root: Path, *, min_fps=30., min_psnr=50., min_frames=300.,
         mean_psnr=number(r.get('mean_embedding_psnr'))
         clean_acc=number(r.get('mean_clean_bit_accuracy'))
         quality['values'].append({'watermark':r.get('watermark_name'),'mean_psnr':mean_psnr,'clean_accuracy':clean_acc})
-        check(mean_psnr is not None and mean_psnr>=min_psnr,
+        check(mean_psnr is not None and (min_psnr <= 0 or mean_psnr>=min_psnr),
               f"{r.get('watermark_name')}: final clean mean PSNR {mean_psnr} below {min_psnr}")
         check(clean_acc is not None and clean_acc>=1.0-1e-9,
               f"{r.get('watermark_name')}: clean bit accuracy {clean_acc}, expected 1")

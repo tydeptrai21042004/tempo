@@ -41,9 +41,9 @@ fi
 
 METRIC_ARGS=(--data-dir "$DATA_DIR/host" --watermark "$DATA_DIR/watermark/wm.png" --out "$OUT/all_metrics")
 if [[ "$MODE" == "full" ]]; then
-  METRIC_ARGS+=(--attack-preset standard)
+  METRIC_ARGS+=(--attack-preset reviewer46)
 else
-  METRIC_ARGS+=(--attack-preset smoke --host-limit 1)
+  METRIC_ARGS+=(--attack-preset reviewer46 --host-limit 1)
 fi
 "$PYTHON" scripts/run_all_metrics.py "${METRIC_ARGS[@]}"
 
@@ -51,7 +51,7 @@ fi
 if [[ "$MODE" == "full" ]]; then
   "$PYTHON" scripts/proposal_structural_ablation.py \
     --config "$CONFIG" --out-dir "$OUT/structural_ablation" \
-    --attack-preset standard --max-hosts 3 --calibration-host-count 2 --calibration-iterations 6
+    --attack-preset reviewer46 --max-hosts 3 --calibration-host-count 2 --calibration-iterations 6
 fi
 
 # Optional legacy/common protocol. It is no longer the primary evidence and is
@@ -59,7 +59,7 @@ fi
 if [[ "$RUN_COMMON" == "1" ]]; then
   "$PYTHON" scripts/run_watermark_commands.py dataset-image512-all \
     --data-dir "$DATA_DIR" --workdir "$OUT/common_protocol" \
-    --proposal-config "$CONFIG" --attack-preset standard
+    --proposal-config "$CONFIG" --attack-preset reviewer46
 fi
 
 if [[ "$RUN_VIDEO" == "1" ]]; then

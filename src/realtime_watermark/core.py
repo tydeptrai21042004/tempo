@@ -812,6 +812,9 @@ def default_attacks(preset: str = "extended") -> list[tuple[str, Callable[[np.nd
       - extended: full stress suite with hard compression, color, geometry, quantization, and combined attacks.
       - stress: alias of extended for explicit stress-test command lines.
     """
+    if str(preset).lower().strip() in {"reviewer46", "internal46"}:
+        from .attack_manifest import reviewer_attacks
+        return reviewer_attacks()
     if str(preset).lower().strip() == "unified":
         from .attack_manifest import unified_attacks
         return unified_attacks()

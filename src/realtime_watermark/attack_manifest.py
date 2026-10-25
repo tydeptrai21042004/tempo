@@ -13,6 +13,7 @@ from typing import Callable
 import numpy as np
 
 MANIFEST = Path(__file__).resolve().parents[2] / "configs/attacks/unified_109.json"
+REVIEWER_MANIFEST = MANIFEST.with_name("reviewer_unified_46.json")
 
 
 def _operators() -> dict[str, Callable]:
@@ -111,3 +112,56 @@ def manifest_summary() -> dict:
             "total_conditions": len(info["attacks"]),
             "attacked_conditions": len(info["attacks"]) - 1,
             "attack_ids": [entry["id"] for entry in info["attacks"]]}
+
+
+@lru_cache(maxsize=1)
+def load_reviewer_manifest() -> dict:
+    """Frozen internal common protocol: clean + 45 reviewer-relevant attacks.
+
+    Independent from unified_109.json, whose semantics and external Kodak
+    evaluation remain unchanged. No subset is selected from test results.
+    """
+    raw = json.loads(REVIEWER_MANIFEST.read_text(encoding="utf-8"))
+    if raw.get("schema_version") != "tempo-attacks-v1" or raw.get("protocol_id") != "tempo-reviewer-unified-46-v1-20261025":
+        raise ValueError("Unexpected internal attack registry")
+    entries = raw.get("attacks", [])
+    if len(entries) != 46 or entries[0].get("id") != "clean":
+        raise ValueError("Internal suite must contain clean + 45 attacked conditions")
+    seen = set()
+    operators = _operators()
+    for item in entries:
+        attack_id = item.get("id")
+        if not isinstance(attack_id, str) or not attack_id or attack_id in seen:
+            raise ValueError("Missing or duplicated internal attack identifier")
+        seen.add(attack_id)
+        _validate_node(item.get("pipeline"), operators)
+    categories = raw.get("categories", {})
+    if set(sum(categories.values(), [])) != seen - {"clean"}:
+        raise ValueError("Every condition must belong to one reviewer category")
+    return raw
+
+
+def reviewer_attack_manifest_sha256() -> str:
+    return hashlib.sha256(REVIEWER_MANIFEST.read_bytes()).hexdigest()
+
+
+def reviewer_attacks() -> list[tuple[str, Callable]]:
+    """Use the exact same RGB perturbation implementations for ALL methods."""
+    entries = load_reviewer_manifest()["attacks"]
+    ops = _operators()
+    def apply(node, img):
+        src = np.asarray(img)
+        if src.dtype != np.uint8 or src.ndim != 3 or src.shape[-1] != 3:
+            raise ValueError("Expected RGB uint8 input")
+        return _evaluate(node, src, ops)
+    return [(e["id"], lambda img, node=e["pipeline"]: apply(node, img)) for e in entries]
+
+
+def reviewer_manifest_summary() -> dict:
+    raw = load_reviewer_manifest()
+    return {"protocol_id":raw["protocol_id"],
+            "sha256": reviewer_attack_manifest_sha256(),
+            "total_conditions":len(raw["attacks"]),
+            "attacked_conditions":len(raw["attacks"])-1,
+            "attack_ids":[e["id"] for e in raw["attacks"]],
+            "categories":raw["categories"]}

@@ -8,7 +8,8 @@ from PIL import Image,ImageDraw
 from realtime_watermark.core import load_binary_watermark,bit_accuracy,nc_binary
 from realtime_watermark.proposals.jilp_qim.config import JILPQIMConfig
 from realtime_watermark.proposals.jilp_qim.method import embed_proposal,extract_jilp_qim
-from reviewer_experiments import warp,jpeg,attenuation,csv_write
+from reviewer_experiments import csv_write
+from realtime_watermark.attack_manifest import reviewer_attacks, reviewer_manifest_summary
 
 
 def tile(bit_image,scale=4):
@@ -28,9 +29,8 @@ def run(a):
             host=np.asarray(Image.open(hp).convert('RGB'))
             encoded,key=embed_proposal(host,watermark,seed=a.seed,method_params=cfg.to_dict())
             eta=float(key.params['eta'])
-            conditions=[('clean',encoded),('jpeg30',jpeg(encoded,30)),('rotate2p5',warp(encoded,angle=2.5)),
-                        ('payload_zero',attenuation(encoded,eta,'payload',1.0)),
-                        ('pilot_zero',attenuation(encoded,eta,'pilot',1.0))]
+            conditions=[(name, fn(encoded)) for name, fn in reviewer_attacks()
+                        if name in {'clean','jpeg30','rotate_2p5','gaussian_variance_0p003','affine_shear005'}]
             w=300*len(conditions)+300;h=350
             canvas=Image.new('RGB',(w,h),'white');draw=ImageDraw.Draw(canvas)
             canvas.paste(tile(watermark),(10,45));draw.text((10,12),'Original 4096-bit watermark',fill='black')
@@ -47,6 +47,7 @@ def run(a):
             canvas.save(out/name)
     csv_write(out/'gallery_data.csv',rows)
     (out/'gallery_manifest.json').write_text(json.dumps({
+      'attack_manifest_sha256':reviewer_manifest_summary()['sha256'],
       'gallery_count':len(hosts)*len(wm_files),'observations':len(rows),
       'scope':'proposal-only extracted watermark gallery; modern baseline gallery requires source implementations'},indent=2))
     print(f'Created {len(hosts)*len(wm_files)} proposal galleries')
@@ -57,4 +58,5 @@ if __name__=='__main__':
     p.add_argument('--config',required=True);p.add_argument('--out-dir',required=True)
     p.add_argument('--max-hosts',type=int,default=2);p.add_argument('--max-watermarks',type=int,default=2)
     p.add_argument('--seed',type=int,default=2026)
+    p.add_argument('--attack-preset',choices=['reviewer46'],default='reviewer46')
     run(p.parse_args())

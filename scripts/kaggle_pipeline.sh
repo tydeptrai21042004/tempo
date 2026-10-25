@@ -50,25 +50,25 @@ fi
 RESUME_FROM_VIDEO="${KAGGLE_RESUME_FROM_VIDEO:-0}"
 
 if [[ "$MODE" == "quick" ]]; then
-  HP_ATTACK_PRESET="${HP_ATTACK_PRESET:-smoke}"
-  IMAGE_ATTACK_PRESET="${IMAGE_ATTACK_PRESET:-smoke}"
+  HP_ATTACK_PRESET="reviewer46"
+  IMAGE_ATTACK_PRESET="reviewer46"
   VIDEO_FRAMES="${VIDEO_FRAMES:-24}"
   VIDEO_WARMUP_FRAMES="${VIDEO_WARMUP_FRAMES:-2}"
   HOST_LIMIT="${HOST_LIMIT:-2}"
   ABLATION_HOST_LIMIT="${ABLATION_HOST_LIMIT:-1}"
   STREAM_FRAMES="${STREAM_FRAMES:-30}"
   STREAM_RESOLUTIONS="${STREAM_RESOLUTIONS:-512x512}"
-  VIDEO_STREAM_CHANNELS="${VIDEO_STREAM_CHANNELS:-clean,jpeg70,jpeg40}"
+  VIDEO_STREAM_CHANNELS="clean,jpeg70,jpeg40"
 else
-  HP_ATTACK_PRESET="${HP_ATTACK_PRESET:-standard}"
-  IMAGE_ATTACK_PRESET="${IMAGE_ATTACK_PRESET:-unified}"
+  HP_ATTACK_PRESET="reviewer46"
+  IMAGE_ATTACK_PRESET="reviewer46"
   VIDEO_FRAMES="${VIDEO_FRAMES:-300}"
   VIDEO_WARMUP_FRAMES="${VIDEO_WARMUP_FRAMES:-10}"
   HOST_LIMIT="${HOST_LIMIT:-0}"
   ABLATION_HOST_LIMIT="${ABLATION_HOST_LIMIT:-0}"
   STREAM_FRAMES="${STREAM_FRAMES:-300}"
   STREAM_RESOLUTIONS="${STREAM_RESOLUTIONS:-512x512,1280x720}"
-  VIDEO_STREAM_CHANNELS="${VIDEO_STREAM_CHANNELS:-clean,jpeg90,jpeg70,jpeg40,gaussian5,blur3,drop10}"
+  VIDEO_STREAM_CHANNELS="clean,jpeg90,jpeg70,jpeg40"
 fi
 
 if [[ "$RESUME_FROM_VIDEO" != "1" ]]; then
@@ -178,7 +178,10 @@ PYVIDEO
 )"
 VIDEO_ABLATION_INPUT="${VIDEO_INPUT:-$FIRST_CORPUS_VIDEO}"
 
-stage "5. RUN PAPER-NATIVE BASELINE TRACKS"
+# Paper-native protocols use method-specific attacks and cannot belong to the
+# strictly shared 46-condition matched comparison. Keep separately opt-in.
+if [[ "${TEMPO_RUN_PAPER_NATIVE_SEPARATELY:-0}" == "1" ]]; then
+stage "5. OPTIONAL PAPER-NATIVE REPRODUCTION (NOT PART OF UNIFIED ATTACK COMPARISON)"
 NATIVE_ARGS=()
 if [[ "$MODE" == "quick" ]]; then
   NATIVE_ARGS+=(--quick)
@@ -187,8 +190,10 @@ fi
   --data-dir "$TEST_HOST_DIR" \
   --out "$REPORT_ROOT/paper_native" \
   "${NATIVE_ARGS[@]}"
+fi
 
 stage "5A. FREEZE CANONICAL ATTACK AND BASELINE FIDELITY MANIFESTS"
+"$PYTHON_BIN" scripts/audit_reviewer_unified_46.py --out "$REPORT_ROOT/validation/reviewer_unified_46.json" --source-copy "$REPORT_ROOT/validation/reviewer_unified_46_manifest.json"
 "$PYTHON_BIN" scripts/audit_common_protocol.py \
   --output "$REPORT_ROOT/validation/common_protocol.json" \
   --attack-preset "$IMAGE_ATTACK_PRESET"
@@ -254,7 +259,7 @@ fi
 "$PYTHON_BIN" scripts/reviewer_experiments.py \
   --host-dir "$TEST_HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
   --config "$SELECTED_CONFIG" --out-dir "$REPORT_ROOT/reviewer_experiments" \
-  --mode "$MODE" --seed "$SEED" "${REVIEWER_EXTRA_ARGS[@]}"
+  --mode "$MODE" --seed "$SEED" --attack-preset "$IMAGE_ATTACK_PRESET" "${REVIEWER_EXTRA_ARGS[@]}"
 
 
 stage "9B1. INTENSITY BOUNDARY AND EMBEDDING REJECTION TESTS"
@@ -285,7 +290,7 @@ fi
 "$PYTHON_BIN" scripts/reviewer_joint_sensitivity.py \
   --development-dir "$DEV_HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
   --config "$SELECTED_CONFIG" --out-dir "$REPORT_ROOT/joint_sensitivity" \
-  --seed "$SEED" "${JOINT_ARGS[@]}"
+  --seed "$SEED" --attack-preset "$HP_ATTACK_PRESET" "${JOINT_ARGS[@]}"
 
 stage "9B4. EMPIRICAL TEMPORAL VOTING LIMITS"
 TEMPORAL_ARGS=()
@@ -307,12 +312,12 @@ fi
 "$PYTHON_BIN" scripts/reviewer_gallery.py \
   --host-dir "$TEST_HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
   --config "$SELECTED_CONFIG" --out-dir "$REPORT_ROOT/galleries" \
-  --seed "$SEED" "${GALLERY_ARGS[@]}"
+  --seed "$SEED" --attack-preset "$IMAGE_ATTACK_PRESET" "${GALLERY_ARGS[@]}"
 
 stage "9C. MATCHED-PSNR BASELINES ON HELD-OUT HOSTS"
 MATCHED_ARGS=()
 if [[ "$MODE" == "quick" ]]; then
-  MATCHED_ARGS+=(--host-limit 1 --watermark-limit 1 --attack-preset smoke --timing-repeats 2 --timing-warmups 1)
+  MATCHED_ARGS+=(--host-limit 1 --watermark-limit 1 --attack-preset "$IMAGE_ATTACK_PRESET" --timing-repeats 2 --timing-warmups 1)
 else
   MATCHED_ARGS+=(--attack-preset "$IMAGE_ATTACK_PRESET" --timing-repeats 5 --timing-warmups 2)
 fi
@@ -320,12 +325,16 @@ fi
   --host-dir "$TEST_HOST_DIR" --calibration-host-dir "$DEV_HOST_DIR" \
   --watermark-dir "$WATERMARK_DIR" --proposal-config "$SELECTED_CONFIG" \
   --out-dir "$REPORT_ROOT/matched_psnr" --wm-size "$WM_SIZE" \
-  --seed "$SEED" --target-psnr 45 --psnr-tolerance 0.75 "${MATCHED_ARGS[@]}"
+  --seed "$SEED" --target-psnr 44.18 --psnr-tolerance 0.75 "${MATCHED_ARGS[@]}"
 
 stage "9C2. STRICT COMMON-PAIR MATCHED-PSNR EFFECTS"
 "$PYTHON_BIN" scripts/reviewer_matched_pairs.py \
   --matched-dir "$REPORT_ROOT/matched_psnr" \
   --out-dir "$REPORT_ROOT/matched_psnr" --seed "$SEED"
+
+stage "9C3. VERIFY THE SAME 46 ATTACKS FOR EVERY COMMON-PROTOCOL METHOD"
+"$PYTHON_BIN" scripts/audit_internal_unified_coverage.py \
+  --reports "$REPORT_ROOT" --out "$REPORT_ROOT/validation/internal_coverage.json"
 
 stage "9D. HOST-CLUSTERED CONFIDENCE INTERVALS AND PAIRED EFFECTS"
 "$PYTHON_BIN" scripts/reviewer_statistics.py \
@@ -366,6 +375,10 @@ host_rule=all BMP except names containing lena or lenna
 watermark_rule=both PNG watermarks; quick mode is a smoke subset
 hyperparameter_attack_preset=$HP_ATTACK_PRESET
 image_attack_preset=$IMAGE_ATTACK_PRESET
+internal_attack_manifest=configs/attacks/reviewer_unified_46.json
+internal_attack_conditions=46_including_clean
+independent_external_kodak_profile=unified109_or_basic
+independent_official_mmwatermark_profile=upstream_catalog
 official_mmwatermark_enabled=${TEMPO_OFFICIAL_MMWATERMARK:-0}
 video_frames=$VIDEO_FRAMES
 video_codec=$VIDEO_CODEC

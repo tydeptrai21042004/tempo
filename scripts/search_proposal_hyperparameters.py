@@ -43,8 +43,8 @@ def main() -> None:
     parser.add_argument("--external-heldout-dir", default=None, help="test directory recorded but never used during selection")
     parser.add_argument(
         "--attack-preset",
-        choices=["smoke", "standard", "extended", "stress", "unified"],
-        default="standard",
+        choices=["smoke", "standard", "extended", "stress", "unified", "reviewer46"],
+        default="reviewer46",
     )
     parser.add_argument("--mean-psnr-drop", type=float, default=1.0)
     parser.add_argument("--min-psnr-drop", type=float, default=1.5)

@@ -1,0 +1,553 @@
+{
+  "schema_version": "tempo-attacks-v1",
+  "noise_units": "sigma attacks use 8-bit RGB units; variance attacks use variance of intensities normalized to [0,1].",
+  "geometry_policy": "Fixed original width/height and interpolation defined in each attack implementation.",
+  "protocol_id": "tempo-reviewer-unified-46-v1-20261025",
+  "provider": "TEMPO built-in; identical deterministic attacks for proposed and common-protocol baselines",
+  "purpose": "One frozen clean+45 attacked condition set for internal comparisons; full external Kodak and official MMWatermark remain independent.",
+  "attack_policy": "Selected by mathematical family and reviewer-relevant severity BEFORE final held-out measurement; freeze SHA256 in every result.",
+  "codec_policy": "Legacy JPEG uses Pillow default subsampling; explicit subsampling conditions include subsampling in their ID.",
+  "attacks": [
+    {
+      "id": "clean",
+      "pipeline": {
+        "op": "identity",
+        "args": [
+          "$image"
+        ]
+      }
+    },
+    {
+      "id": "jpeg90",
+      "pipeline": {
+        "op": "attack_jpeg",
+        "args": [
+          "$image",
+          90
+        ]
+      }
+    },
+    {
+      "id": "jpeg70",
+      "pipeline": {
+        "op": "attack_jpeg",
+        "args": [
+          "$image",
+          70
+        ]
+      }
+    },
+    {
+      "id": "jpeg50",
+      "pipeline": {
+        "op": "attack_jpeg",
+        "args": [
+          "$image",
+          50
+        ]
+      }
+    },
+    {
+      "id": "jpeg40",
+      "pipeline": {
+        "op": "attack_jpeg",
+        "args": [
+          "$image",
+          40
+        ]
+      }
+    },
+    {
+      "id": "jpeg30",
+      "pipeline": {
+        "op": "attack_jpeg",
+        "args": [
+          "$image",
+          30
+        ]
+      }
+    },
+    {
+      "id": "webp50",
+      "pipeline": {
+        "op": "attack_webp",
+        "args": [
+          "$image",
+          50
+        ]
+      }
+    },
+    {
+      "id": "gaussian_sigma2",
+      "pipeline": {
+        "op": "attack_gaussian",
+        "args": [
+          "$image",
+          2.0
+        ]
+      }
+    },
+    {
+      "id": "gaussian_sigma5",
+      "pipeline": {
+        "op": "attack_gaussian",
+        "args": [
+          "$image",
+          5.0
+        ]
+      }
+    },
+    {
+      "id": "gaussian_variance_0p003",
+      "pipeline": {
+        "op": "attack_gaussian_variance",
+        "args": [
+          "$image",
+          0.003,
+          123
+        ]
+      }
+    },
+    {
+      "id": "gaussian_variance_0p05",
+      "pipeline": {
+        "op": "attack_gaussian_variance",
+        "args": [
+          "$image",
+          0.05,
+          123
+        ]
+      }
+    },
+    {
+      "id": "speckle_variance_0p001",
+      "pipeline": {
+        "op": "attack_speckle_variance",
+        "args": [
+          "$image",
+          0.001,
+          777
+        ]
+      }
+    },
+    {
+      "id": "speckle_variance_0p03",
+      "pipeline": {
+        "op": "attack_speckle_variance",
+        "args": [
+          "$image",
+          0.03,
+          777
+        ]
+      }
+    },
+    {
+      "id": "saltpepper_0_02",
+      "pipeline": {
+        "op": "attack_salt_pepper",
+        "args": [
+          "$image",
+          0.02
+        ]
+      }
+    },
+    {
+      "id": "poisson",
+      "pipeline": {
+        "op": "attack_poisson",
+        "args": [
+          "$image"
+        ]
+      }
+    },
+    {
+      "id": "blur_r1_0",
+      "pipeline": {
+        "op": "attack_blur",
+        "args": [
+          "$image",
+          1.0
+        ]
+      }
+    },
+    {
+      "id": "motion_blur7_h",
+      "pipeline": {
+        "op": "attack_motion_blur",
+        "args": [
+          "$image",
+          7,
+          "horizontal"
+        ]
+      }
+    },
+    {
+      "id": "median3",
+      "pipeline": {
+        "op": "attack_median",
+        "args": [
+          "$image",
+          3
+        ]
+      }
+    },
+    {
+      "id": "resize075",
+      "pipeline": {
+        "op": "attack_resize",
+        "args": [
+          "$image",
+          0.75
+        ]
+      }
+    },
+    {
+      "id": "resize050",
+      "pipeline": {
+        "op": "attack_resize",
+        "args": [
+          "$image",
+          0.5
+        ]
+      }
+    },
+    {
+      "id": "aspect_resize_075_125",
+      "pipeline": {
+        "op": "attack_aspect_resize",
+        "args": [
+          "$image",
+          0.75,
+          1.25
+        ]
+      }
+    },
+    {
+      "id": "brightness090_contrast110",
+      "pipeline": {
+        "op": "attack_brightness_contrast",
+        "args": [
+          "$image",
+          0.9,
+          1.1
+        ]
+      }
+    },
+    {
+      "id": "gamma120",
+      "pipeline": {
+        "op": "attack_gamma",
+        "args": [
+          "$image",
+          1.2
+        ]
+      }
+    },
+    {
+      "id": "grayscale_y",
+      "pipeline": {
+        "op": "attack_grayscale_y",
+        "args": [
+          "$image"
+        ]
+      }
+    },
+    {
+      "id": "chroma420",
+      "pipeline": {
+        "op": "attack_chroma_subsample_420",
+        "args": [
+          "$image"
+        ]
+      }
+    },
+    {
+      "id": "cutout20",
+      "pipeline": {
+        "op": "attack_cutout",
+        "args": [
+          "$image",
+          0.2
+        ]
+      }
+    },
+    {
+      "id": "crop_restore10",
+      "pipeline": {
+        "op": "attack_crop_restore",
+        "args": [
+          "$image",
+          0.1
+        ]
+      }
+    },
+    {
+      "id": "crop_restore25",
+      "pipeline": {
+        "op": "attack_crop_restore",
+        "args": [
+          "$image",
+          0.25
+        ]
+      }
+    },
+    {
+      "id": "rotate1",
+      "pipeline": {
+        "op": "attack_rotate",
+        "args": [
+          "$image",
+          1.0
+        ]
+      }
+    },
+    {
+      "id": "rotate_2p5",
+      "pipeline": {
+        "op": "attack_rotate",
+        "args": [
+          "$image",
+          2.5
+        ]
+      }
+    },
+    {
+      "id": "rotate_7p5",
+      "pipeline": {
+        "op": "attack_rotate",
+        "args": [
+          "$image",
+          7.5
+        ]
+      }
+    },
+    {
+      "id": "rotate_15p0",
+      "pipeline": {
+        "op": "attack_rotate",
+        "args": [
+          "$image",
+          15.0
+        ]
+      }
+    },
+    {
+      "id": "translate4_4",
+      "pipeline": {
+        "op": "attack_translate",
+        "args": [
+          "$image",
+          4,
+          4
+        ]
+      }
+    },
+    {
+      "id": "subpixel_translate_0p5_0p5",
+      "pipeline": {
+        "op": "attack_translate_subpixel",
+        "args": [
+          "$image",
+          0.5,
+          0.5
+        ]
+      }
+    },
+    {
+      "id": "scale_geometry_0p9",
+      "pipeline": {
+        "op": "attack_scaled_geometry",
+        "args": [
+          "$image",
+          0.9
+        ]
+      }
+    },
+    {
+      "id": "scale_geometry_1p1",
+      "pipeline": {
+        "op": "attack_scaled_geometry",
+        "args": [
+          "$image",
+          1.1
+        ]
+      }
+    },
+    {
+      "id": "affine_shear005",
+      "pipeline": {
+        "op": "attack_affine_shear",
+        "args": [
+          "$image",
+          0.05
+        ]
+      }
+    },
+    {
+      "id": "affine_shear_0p1",
+      "pipeline": {
+        "op": "attack_affine_shear",
+        "args": [
+          "$image",
+          0.1
+        ]
+      }
+    },
+    {
+      "id": "perspective002",
+      "pipeline": {
+        "op": "attack_perspective",
+        "args": [
+          "$image",
+          0.02
+        ]
+      }
+    },
+    {
+      "id": "jpeg70_gaussian1",
+      "pipeline": {
+        "op": "attack_gaussian",
+        "args": [
+          {
+            "op": "attack_jpeg",
+            "args": [
+              "$image",
+              70
+            ]
+          },
+          1.0
+        ]
+      }
+    },
+    {
+      "id": "rotate2p5_jpeg40",
+      "pipeline": {
+        "op": "attack_jpeg",
+        "args": [
+          {
+            "op": "attack_rotate",
+            "args": [
+              "$image",
+              2.5
+            ]
+          },
+          40
+        ]
+      }
+    },
+    {
+      "id": "resize090_jpeg40",
+      "pipeline": {
+        "op": "attack_jpeg",
+        "args": [
+          {
+            "op": "attack_resize",
+            "args": [
+              "$image",
+              0.9
+            ]
+          },
+          40
+        ]
+      }
+    },
+    {
+      "id": "screen_capture_light",
+      "pipeline": {
+        "op": "attack_screen_capture",
+        "args": [
+          "$image"
+        ]
+      }
+    },
+    {
+      "id": "print_scan_light",
+      "pipeline": {
+        "op": "attack_print_scan",
+        "args": [
+          "$image"
+        ]
+      }
+    },
+    {
+      "id": "chroma_blur1",
+      "pipeline": {
+        "op": "attack_chroma_blur",
+        "args": [
+          "$image",
+          1.0
+        ]
+      }
+    },
+    {
+      "id": "jpeg70_subsampling2",
+      "pipeline": {
+        "op": "attack_jpeg_subsampling",
+        "args": [
+          "$image",
+          70,
+          2
+        ]
+      }
+    }
+  ],
+  "categories": {
+    "compression": [
+      "jpeg90",
+      "jpeg70",
+      "jpeg50",
+      "jpeg40",
+      "jpeg30",
+      "webp50",
+      "jpeg70_subsampling2"
+    ],
+    "noise": [
+      "gaussian_sigma2",
+      "gaussian_sigma5",
+      "gaussian_variance_0p003",
+      "gaussian_variance_0p05",
+      "speckle_variance_0p001",
+      "speckle_variance_0p03",
+      "saltpepper_0_02",
+      "poisson"
+    ],
+    "filtering": [
+      "blur_r1_0",
+      "motion_blur7_h",
+      "median3",
+      "chroma_blur1"
+    ],
+    "geometry": [
+      "resize075",
+      "resize050",
+      "aspect_resize_075_125",
+      "crop_restore10",
+      "crop_restore25",
+      "rotate1",
+      "rotate_2p5",
+      "rotate_7p5",
+      "rotate_15p0",
+      "translate4_4",
+      "subpixel_translate_0p5_0p5",
+      "scale_geometry_0p9",
+      "scale_geometry_1p1",
+      "affine_shear005",
+      "affine_shear_0p1",
+      "perspective002"
+    ],
+    "color_and_occlusion": [
+      "brightness090_contrast110",
+      "gamma120",
+      "grayscale_y",
+      "chroma420",
+      "cutout20"
+    ],
+    "mixed_and_acquisition": [
+      "jpeg70_gaussian1",
+      "rotate2p5_jpeg40",
+      "resize090_jpeg40",
+      "screen_capture_light",
+      "print_scan_light"
+    ]
+  }
+}

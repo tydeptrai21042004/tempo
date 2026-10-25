@@ -12,7 +12,8 @@ from PIL import Image
 from realtime_watermark.core import load_binary_watermark,nc_binary,bit_accuracy
 from realtime_watermark.proposals.jilp_qim.config import JILPQIMConfig
 from realtime_watermark.proposals.jilp_qim.method import embed_proposal,extract_jilp_qim
-from reviewer_experiments import jpeg,warp,csv_write
+from reviewer_experiments import csv_write
+from realtime_watermark.attack_manifest import reviewer_attacks,reviewer_manifest_summary
 
 
 def iid_majority_ber(p,t):
@@ -26,6 +27,7 @@ def run(a):
     hosts=sorted(Path(a.host_dir).glob('*.bmp'))[:a.max_hosts]
     wms=sorted(Path(a.watermark_dir).glob('*.png'))[:a.max_watermarks]
     lengths=(1,3,5,9,15,31)
+    canonical=dict(reviewer_attacks())
     rows=[];frame_rows=[]
     for wp in wms:
         wm=load_binary_watermark(wp,size=64)
@@ -39,10 +41,10 @@ def run(a):
                     for t in range(max(lengths)):
                         if channel=='jpeg':
                             # Quality fluctuates by frame; naturally correlated content remains.
-                            received=jpeg(marked,int(rng.integers(30,81)))
+                            received=canonical[('jpeg30','jpeg40','jpeg70')[int(rng.integers(0,3))]](marked)
                         else:
                             # Fixed whole-sequence displacement: deliberately correlated errors.
-                            received=warp(marked,dy=2,dx=1)
+                            received=canonical['translate4_4'](marked)
                         bits=extract_jilp_qim(received,key)
                         decoded.append(np.asarray(bits,dtype=np.uint8).reshape(-1))
                         frame_rows.append({'host':hp.name,'watermark':wp.name,'channel':channel,
@@ -60,6 +62,9 @@ def run(a):
     csv_write(out/'per_frame_errors.csv',frame_rows)
     (out/'temporal_manifest.json').write_text(json.dumps({'results':len(rows),'frame_rows':len(frame_rows),
         'tested_lengths':list(lengths),'config_hash':cfg.sha256(),
+        'attack_manifest_sha256':reviewer_manifest_summary()['sha256'],
+        'temporal_channel_ids':{'jpeg_randomized':['jpeg30','jpeg40','jpeg70'],
+                                'correlated_translation':['translate4_4']},
         'note':'iid reference is not a bound under correlated video-frame errors; same watermark repeated on every frame'},indent=2))
     print(f'Wrote {len(rows)} temporal observations')
 

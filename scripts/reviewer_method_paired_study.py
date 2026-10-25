@@ -11,14 +11,8 @@ import numpy as np
 from reviewer_expansion_common import *
 from reviewer_experiments import jpeg, warp
 
-ATTACKS = {
-    'clean': lambda im: im,
-    'jpeg70': lambda im: jpeg(im, 70),
-    'jpeg40': lambda im: jpeg(im, 40),
-    'rotation2p5': lambda im: warp(im, angle=2.5),
-    'subpixel0p5': lambda im: warp(im, dx=.5, dy=.5),
-    'rotation3p25': lambda im: warp(im, angle=3.25),
-}
+from realtime_watermark.attack_manifest import reviewer_attacks, reviewer_manifest_summary
+ATTACKS = dict(reviewer_attacks())
 
 
 def run(a):
@@ -64,7 +58,7 @@ def run(a):
     write_rows(out/'paired_host_ci.csv',stats)
     write_json(out/'manifest.json',{'status':'complete','configs':{k:v.sha256() for k,v in configs.items()},
         'hosts':{p.name:md5_file(p) for p in hosts},'watermarks':{p.name:md5_file(p) for p in marks},
-        'rows':len(rows),'pairs':len(paired),'attacks':attacks,
+        'rows':len(rows),'pairs':len(paired),'attacks':attacks,'attack_manifest_sha256':reviewer_manifest_summary()['sha256'],
         'caveat':'Not matched PSNR; configs differ in parameters/phase policy, not a single-factor causal test',**info()})
 
 

@@ -27,8 +27,8 @@ def main() -> None:
     parser.add_argument("--wm-size", type=int, default=64)
     parser.add_argument(
         "--attack-preset",
-        choices=["smoke", "standard", "extended", "stress", "unified"],
-        default="stress",
+        choices=["smoke", "standard", "extended", "stress", "unified", "reviewer46"],
+        default="reviewer46",
     )
     parser.add_argument("--host-limit", type=int, default=0)
     args = parser.parse_args()

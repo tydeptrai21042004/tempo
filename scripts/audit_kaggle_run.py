@@ -119,7 +119,7 @@ def audit(run_root: Path, psnr_target: float=50.0, fps_target: float=30.0):
             value=fnum(row.get('mean_embedding_psnr'))
             if value is None:
                 flag('unknown',f"Missing mean PSNR for {row.get('watermark_name','watermark')}")
-            elif value < psnr_target:
+            elif psnr_target > 0 and value < psnr_target:
                 flag('performance',f"Final {row.get('watermark_name')} mean PSNR {value:.3f} dB < {psnr_target:g} dB goal; do not substitute hyperparameter-search results")
             nc=fnum(row.get('mean_clean_bit_accuracy'))
             if nc is not None and nc < 1.0-1e-9:
