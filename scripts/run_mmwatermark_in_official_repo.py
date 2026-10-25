@@ -9,6 +9,7 @@ extracts via the selected TEMPO proposal implementation in the TEMPO source tree
 """
 from __future__ import annotations
 import argparse, hashlib, json, os, shutil, subprocess, sys
+from PIL import Image
 from pathlib import Path
 
 import run_official_mmwatermark_tempo as official
@@ -58,6 +59,24 @@ def main(args: argparse.Namespace) -> None:
         raise ValueError('Companion checkout must be separate from the original Git checkout')
     if args.out_dir.is_relative_to(args.official_repo) or args.out_dir.is_relative_to(args.companion_repo):
         raise ValueError('Evidence directory must be outside upstream Git checkouts')
+    # Fail before cloning two upstream Git repositories. The integration entry
+    # only enumerates BMP hosts; PNG center crops made the prior Kaggle job fail.
+    host_files=sorted(p for p in args.host_dir.glob('*.bmp') if p.stem.lower() not in ('lena','lenna'))
+    if not host_files:
+        raise RuntimeError('Official MMWatermark requires BMP hosts (*.bmp), but none were found in '+str(args.host_dir))
+    wm_files=sorted(args.watermark_dir.glob('*.png'))
+    if not wm_files:
+        raise RuntimeError('Official MMWatermark requires PNG watermark files in '+str(args.watermark_dir))
+    for host in host_files:
+        with Image.open(host) as im:
+            if im.format!='BMP' or im.size!=(512,512) or im.mode!='RGB':
+                raise RuntimeError(f'Invalid 512x512 RGB BMP host: {host} (format={im.format}, size={im.size}, mode={im.mode})')
+    for mark in wm_files:
+        with Image.open(mark) as im:
+            if im.size!=(64,64):
+                raise RuntimeError(f'Expected full 64x64 (4096-bit) watermark: {mark}: {im.size}')
+    if not args.config.is_file():
+        raise RuntimeError('Frozen proposal config not found: '+str(args.config))
     # Clone/verify both originals before generating any integration source.
     upstream_sha = official.prepare_repo(args.official_repo)
     companion_sha = official.prepare_companion(args.companion_repo)

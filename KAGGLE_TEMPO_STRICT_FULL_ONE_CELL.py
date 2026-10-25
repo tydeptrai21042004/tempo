@@ -1,7 +1,7 @@
-# STRICT scientific validation: clone CURRENT GitHub main, run a completely fresh TEMPO
-# native benchmark, extra reviewer experiments, FPS variants, and the original
-# MMWatermark-Robustness code with the TEMPO proposal. Internet must be ON.
-# CPU-only; genuine image/video data; never substitutes synthetic observations.
+# TEMPO full experiments: 12 existing hosts, 46 internal attacks, frozen proposal
+# and five common-payload baselines. Full Kodak 24/24 is ONLY evaluated through
+# the genuine upstream MMWatermark attack catalog (no native Kodak 109 run).
+# No scientific acceptance gate. Execution and coverage errors remain fatal.
 import os, sys, time, json, signal, hashlib, zipfile, threading, subprocess, traceback
 from pathlib import Path
 from datetime import datetime, timezone
@@ -12,13 +12,13 @@ MAX_HOURS = 11.40
 CHECKPOINT_MINUTES = 30
 RUN_REVIEWER_EXPANSION = True
 RUN_FPS_VARIANTS = True
-RUN_ORIGINAL_MMWATERMARK = True
+RUN_OFFICIAL_KODAK_24 = True
 RUN_BASELINE_PREFLIGHT = True
-# Only supply these when real independently obtained evidence exists.
+# Optional separately obtained external results are NOT imported; source-backed
+# internal baselines and Kodak MMWatermark inputs are generated automatically.
 EXTERNAL_HOST_DIR = None
 LEARNED_RESULTS_CSV = None
 LEARNED_PROVENANCE_JSON = None
-EXTERNAL_BASELINES_CSV = None
 INCLUDE_VIDEO_FILES_IN_ZIP = False  # Original videos stay in the run directory.
 
 WORK = Path('/kaggle/working')
@@ -47,7 +47,7 @@ checkpoint_stop = threading.Event()
 def status_write():
     payload = dict(run_id=RID, git_url=GITHUB, git_commit=commit,
                    run_mode='FRESH_NO_RESUME', seed=2026,
-                   attack_preset='unified_109', stages=stages,
+                   attack_preset='reviewer46', stages=stages,
                    status=stages,
                    generated_utc=datetime.now(timezone.utc).isoformat())
     with zip_lock:
@@ -79,6 +79,13 @@ def archive(target):
                         except (OSError, FileNotFoundError):
                             # Some experiment files can be atomically replaced during snapshots.
                             pass
+                for original, label in (
+                    (ROOT/'external_data/kodak_native_24/kodak_full_manifest.json',
+                     'external_provenance/kodak_full_manifest.json'),
+                    (ROOT/'external_data/kodak_official_bmp_24/kodak_official_crops_manifest.json',
+                     'external_provenance/kodak_official_crops_manifest.json')):
+                    if original.is_file():
+                        z.write(original,label)
             temp.replace(target)
             print('EVIDENCE ZIP:', target, '%.2f MB' % (target.stat().st_size / 1e6), flush=True)
         except Exception as exc:
@@ -214,7 +221,8 @@ try:
                 'scripts/run_official_mmwatermark_tempo.py',
                 'scripts/baseline_preflight.py', 'scripts/run_reviewer_expansion.py',
                 'scripts/proposal_fps_ablation.py', 'scripts/audit_kaggle_run.py',
-                'scripts/benchmark_frozen_720p.py', 'scripts/strict_scientific_gate.py']
+                'scripts/benchmark_frozen_720p.py','scripts/benchmark_algorithm_only_720p.py',
+                'scripts/download_full_kodak.py', 'scripts/prepare_kodak_official_512.py']
     missing = [x for x in required if not (REPO/x).is_file()]
     if missing:
         raise RuntimeError('Latest GitHub main is missing required files: '+repr(missing))
@@ -310,38 +318,13 @@ try:
     else:
         skipped('05_fps_variants','DISABLED')
 
-    if RUN_ORIGINAL_MMWATERMARK:
-        ok=launch('06_original_mmwatermark', [
-            py,REPO/'scripts/run_mmwatermark_in_official_repo.py',
-            '--official-repo',ROOT/'MMWatermark-Robustness',
-            '--companion-repo',ROOT/'MM_Robustness',
-            '--host-dir',REPORT/'holdout/test',
-            '--watermark-dir',DATA/'watermark',
-            '--config',selected,
-            '--out-dir',EXTRA/'external_official_mmwatermark',
-            '--severities',1,2,3,4,5,
-            # No --allow-partial: full upstream coverage is REQUIRED.
-        ],env,reserve=650)
-        manifest=EXTRA/'external_official_mmwatermark/official_mmwatermark_manifest.json'
-        if manifest.is_file():
-            m=json.loads(manifest.read_text())
-            record=stages['06_original_mmwatermark']
-            record['full_coverage']=bool(m.get('full_coverage'))
-            record['completed_rows']=m.get('completed_rows')
-            record['expected_rows']=m.get('expected_full_requested_rows')
-            if ok and not m.get('full_coverage'):
-                record['status']='PARTIAL_OFFICIAL_COVERAGE'
-            status_write()
-        elif ok:
-            stages['06_original_mmwatermark']['status']='FAILED_NO_MANIFEST'
-            status_write()
-    else:
-        skipped('06_original_mmwatermark','DISABLED')
+    # Internal image attacks and all registered 4096-bit baselines are already
+    # produced by 02_full_native on repository hosts (12 excluding Lena).
+    # Do not spend time running the upstream MMWatermark catalog on these hosts:
+    # it is reserved for all 24 external Kodak images below.
+    skipped('06_internal_official_mmwatermark', 'OFFICIAL_PROVIDER_RESERVED_FOR_KODAK_24')
 
-    # NEW: true 720p/JPEG70 measurement of the frozen image proposal.
-    # Video samples are real and predecoded; no 45-dB step recalibration.
-    if not RUN_ORIGINAL_MMWATERMARK:
-        raise RuntimeError('Complete evidence requires genuine original MMWatermark')
+    # Keep the original 720p/JPEG70 timing as evidence, not a scientific gate.
     video_manifest=REPORT/'video_sources/corpus.json'
     selected_video=None
     if video_manifest.is_file():
@@ -361,47 +344,103 @@ try:
         stages['09_frozen_720p_fps']={'status':'FAILED_MISSING_REAL_VIDEO'}
         status_write()
     else:
-        launch('09_frozen_720p_fps', [py,REPO/'scripts/benchmark_frozen_720p.py',
+        launch('09_frozen_720p_fps', [py,REPO/'scripts/benchmark_frozen_720p.py','scripts/benchmark_algorithm_only_720p.py',
             '--video',selected_video, '--watermark-dir',DATA/'watermark',
             '--config',selected,'--out-dir',EXTRA/'frozen_720p_30fps',
             '--frames',300,'--fps',32],env,reserve=540)
+        # Standalone method-cost result, deliberately NOT an end-to-end FPS claim.
+        launch('09b_algorithm_only_4096_720p_jpeg70', [py,
+            REPO/'scripts/benchmark_algorithm_only_720p.py',
+            '--video',selected_video,'--watermark-dir',DATA/'watermark',
+            '--config',selected,'--out-dir',EXTRA/'algorithm_only_720p',
+            '--frames',300],env,reserve=500)
 
-    if EXTERNAL_BASELINES_CSV is not None and Path(EXTERNAL_BASELINES_CSV).is_file():
-        launch('07_external_baseline_import', [py,REPO/'scripts/import_external_baseline_results.py',
-            '--input',EXTERNAL_BASELINES_CSV,'--split-manifest',split,
-            '--watermark-dir',DATA/'watermark','--out-dir',EXTRA/'validated_external_methods',
-            '--payload-bits',4096],env,reserve=600)
-    else:
-        skipped('07_external_baseline_import','NO_GENUINE_EXTERNAL_RESULTS_CSV')
 
-    if (REPO/'scripts/audit_kaggle_run.py').is_file():
-        launch('08_audit', [py,REPO/'scripts/audit_kaggle_run.py',
-            '--run-root',ROOT,'--out',META/'diagnostic.json',
-            '--target-psnr',0,'--target-fps',30],env,reserve=420)
-    strict_ok=launch('10_strict_scientific_gate',[
-        py,REPO/'scripts/strict_scientific_gate.py',
-        '--run-root',ROOT,'--out',META/'scientific_gate.json',
-        '--target-fps',30,'--target-psnr',0],env,reserve=220)
-    if not strict_ok:
-        run_exit_code = 2
-        print('SCIENTIFIC TARGETS FAILED: inspect run_metadata/scientific_gate.json',flush=True)
-        stages['SCIENTIFIC_FINAL_VERDICT']={'status':'FAILED_TARGETS','gate':str(META/'scientific_gate.json')}
+    # The ONLY external Kodak experiment. Never run run_full_kodak_external.py
+    # and never require an externally prepared CSV. Download and verify all 24
+    # true-color Kodak PNGs, create lossless 512x512 BMP center crops, and
+    # evaluate *proposal only* with upstream original MMWatermark perturbations.
+    if RUN_OFFICIAL_KODAK_24:
+        kodak_source = ROOT / 'external_data' / 'kodak_native_24'
+        kodak_bmp = ROOT / 'external_data' / 'kodak_official_bmp_24'
+        if not launch('10_download_kodak_24', [py, REPO/'scripts/download_full_kodak.py',
+                '--out-dir', kodak_source], env, reserve=420):
+            raise RuntimeError('Full 24-image Kodak download/verification failed')
+        if not launch('11_prepare_official_bmp_24', [py, REPO/'scripts/prepare_kodak_official_512.py',
+                '--dataset-dir', kodak_source, '--out-dir', kodak_bmp, '--offline'], env, reserve=400):
+            raise RuntimeError('Lossless Kodak BMP preparation failed')
+        # Verify crop provenance and equal-payload preparation before cloning.
+        prep_doc=json.loads((kodak_bmp/'kodak_official_crops_manifest.json').read_text())
+        bmp_list=sorted(kodak_bmp.glob('*.bmp'))
+        if (prep_doc.get('official_host_count')!=24 or len(bmp_list)!=24 or
+            len({x.name for x in bmp_list})!=24 or len(list((DATA/'watermark').glob('*.png')))!=2):
+            raise RuntimeError('Official Kodak input cardinality mismatch (24 BMPs + 2 watermarks required)')
+        # Different dataset names do not establish independent content. Record
+        # SHA256 exact full-image and crop-pixel overlap with the 12 local BMPs.
+        from PIL import Image
+        repo_hashes={}
+        for host in sorted((DATA/'host').glob('*.bmp')):
+            with Image.open(host) as im:
+                repo_hashes[host.name]=hashlib.sha256(im.convert('RGB').tobytes()).hexdigest()
+        external_hashes={}
+        for host in bmp_list:
+            with Image.open(host) as im:
+                external_hashes[host.name]=hashlib.sha256(im.convert('RGB').tobytes()).hexdigest()
+        collisions=[{'kodak':k,'repository':r} for k,v in external_hashes.items()
+                     for r,rh in repo_hashes.items() if v==rh]
+        (META/'dataset_overlap_audit.json').write_text(json.dumps({
+            'comparison':'SHA256 of decoded RGB 512x512 pixels, not filenames',
+            'repository_hosts':repo_hashes,'kodak_center_crops':external_hashes,
+            'exact_pixel_matches':collisions,'note':'Nonidentical hashes do not rule out related photographs or resized variants.'
+        },indent=2))
+        if collisions:
+            print('Dataset overlap WARNING:',collisions,flush=True)
+        result_dir=EXTRA/'official_mmwatermark_kodak_24'
+        ok=launch('12_official_mmwatermark_kodak_24',[
+            py, REPO/'scripts/run_mmwatermark_in_official_repo.py',
+            '--official-repo',ROOT/'Kodak_MMWatermark_Robustness_upstream',
+            '--companion-repo',ROOT/'Kodak_MM_Robustness_upstream',
+            '--host-dir',kodak_bmp, '--watermark-dir',DATA/'watermark',
+            '--config',selected, '--out-dir',result_dir,
+            '--severities',1,2,3,4,5],env,reserve=240)
+        manifest_file=result_dir/'official_mmwatermark_manifest.json'
+        if not manifest_file.is_file():
+            raise RuntimeError('Official Kodak benchmark missing its full coverage manifest')
+        official=json.loads(manifest_file.read_text())
+        state=stages['12_official_mmwatermark_kodak_24']
+        state.update({'host_count':len(official.get('hosts',[])),
+                      'watermark_count':len(official.get('watermarks',[])),
+                      'completed_rows':official.get('completed_rows'),
+                      'expected_rows':official.get('expected_full_requested_rows'),
+                      'full_coverage':official.get('full_coverage')})
+        status_write()
+        if (not ok or not official.get('full_coverage') or
+            len(official.get('hosts',[]))!=24 or len(official.get('watermarks',[]))!=2 or
+            official.get('methods')!=['proposal'] or
+            official.get('completed_rows') != official.get('expected_full_requested_rows')):
+            raise RuntimeError('Official Kodak benchmark incomplete; inspect official manifest and logs')
+        if not launch('13_summarize_official_kodak', [py,
+            REPO/'scripts/summarize_official_kodak.py',
+            '--manifest',manifest_file, '--raw',result_dir/'official_mmwatermark_raw.csv',
+            '--out-dir',result_dir/'summaries'],env,reserve=180):
+            raise RuntimeError('Official Kodak result aggregation failed')
     else:
-        print('SCIENTIFIC TARGETS PASSED; see verifiable evidence ledger',flush=True)
-        stages['SCIENTIFIC_FINAL_VERDICT']={'status':'PASS','gate':str(META/'scientific_gate.json')}
+        skipped('10_13_official_kodak', 'EXPLICITLY_DISABLED')
+
+    # No external-results CSV import and no strict scientific gate. Measured
+    # low PSNR/FPS remains in numerical results; unsuccessful jobs remain fatal.
+    stages['EXECUTION_SUMMARY']={'status':'COMPLETED_ALL_REQUESTED_STAGES'}
     status_write()
 except BaseException as exc:
     run_exit_code = 1
-    stages['SCIENTIFIC_FINAL_VERDICT'] = {
-        'status': 'NOT_VERIFIED', 'reason': 'BLOCKING_ERROR',
-        'error': repr(exc),
+    stages['EXECUTION_SUMMARY'] = {
+        'status': 'FAILED_BLOCKING_ERROR', 'error': repr(exc),
     }
     print('UNEXPECTED / BLOCKING ERROR:',repr(exc),flush=True)
     (META/'wrapper_error.txt').write_text(traceback.format_exc(),encoding='utf8')
 finally:
-    # Exit nonzero for any mandatory stage that failed even if an independent
-    # scientific gate unexpectedly reported PASS. Optional external CSV import
-    # remains explicitly NOT_RUN rather than being presented as completed.
+    # Exit nonzero for any failed experiment, absent result, or incomplete official
+    # coverage. No PSNR/FPS scientific accept/reject rule is applied.
     failing = {
         name: record['status'] for name, record in stages.items()
         if isinstance(record, dict)
@@ -409,6 +448,7 @@ finally:
     }
     if failing and run_exit_code == 0:
         run_exit_code = 3
+        stages['EXECUTION_SUMMARY'] = {'status':'FAILED_INCOMPLETE_STAGES','details':failing}
         print('UNSUCCESSFUL STAGES:', json.dumps(failing, indent=2), flush=True)
     checkpoint_stop.set()
     status_write()
@@ -420,9 +460,8 @@ finally:
     print('Checkpoint archive:',CHECKPOINT_ZIP,flush=True)
     print('Native evidence ZIP:',NATIVE_ZIP if NATIVE_ZIP.is_file() else 'not produced',flush=True)
     print(json.dumps({k:v.get('status') for k,v in stages.items()},indent=2),flush=True)
-    print('SCIENTIFIC VERDICT:',stages.get('SCIENTIFIC_FINAL_VERDICT',{}).get('status','NOT_VERIFIED'),flush=True)
-    print('Check scientific_gate.json: zero failed scientific checks required for PASS.',flush=True)
+    print('Execution status:',stages.get('EXECUTION_SUMMARY',{}).get('status','INCOMPLETE'),flush=True)
     print('RUN EXIT CODE:',run_exit_code,flush=True)
 
-# Do not silently return 0 after pytest, data, upstream or scientific failures.
+# Do not silently return 0 after pytest, data, or official upstream failures.
 raise SystemExit(run_exit_code)
