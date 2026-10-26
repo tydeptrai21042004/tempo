@@ -28,7 +28,7 @@ from realtime_watermark.demo_assets import ensure_demo_video
 from realtime_watermark.native_metrics import binary_symbol_error_rate, mse, prd
 from realtime_watermark.paper_native import NATIVE_DISCLOSURES
 from realtime_watermark.proposals.jilp_qim.config import JILPQIMConfig
-from realtime_watermark.registry import COMMON_VIDEO_METHODS
+from realtime_watermark.registry import COMMON_VIDEO_METHODS, MODERN_ADAPTER_METHODS
 from realtime_watermark.video_pipeline import embed_video_method, extract_video_method
 
 
@@ -72,7 +72,8 @@ def main() -> None:
     )
 
     methods = list(COMMON_VIDEO_METHODS) if args.methods == "all" else [x.strip() for x in args.methods.split(",") if x.strip()]
-    if not methods or any(x not in COMMON_VIDEO_METHODS for x in methods):
+    # New adapters are opt-in; the historical default video protocol is unchanged.
+    if not methods or any(x not in set(COMMON_VIDEO_METHODS) | set(MODERN_ADAPTER_METHODS) for x in methods):
         raise ValueError(f"Unsupported video method selection: {args.methods}")
 
     rows: list[dict[str, object]] = []

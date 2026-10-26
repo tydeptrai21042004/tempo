@@ -5,6 +5,23 @@ from __future__ import annotations
 from copy import deepcopy
 
 PAPER_FIDELITY: dict[str, dict] = {
+    "haar_hd_svd_qim_adapter2024": {
+        "native_status": "independent_2024_inspired_not_original_algorithm",
+        "common_adapter_status": "self_contained_blind_4096bit_haar_hessenberg_svd_qim_control",
+        "paper_reproduction_eligible": False,
+        "native_formula_reproduction_eligible": False,
+        "common_primary_eligible": True,
+        "blindness_tier": "blind",
+        "verified_capacity": "one bit per 8x8 RGB block (4096 in 512x512)",
+        "verified": ["orthonormal Haar LL", "scipy Hessenberg reduction",
+                     "largest singular value parity-QIM", "keyed block permutation",
+                     "original-host-free singular value decoding"],
+        "adapted": ["independent blind parity-QIM replacing additive host/watermark singular-value embedding",
+                    "one bit per host block for equal 4096-bit payload",
+                    "not an author-supplied reproduction of any cited method"],
+        "unresolved_core_stages": ["paper-authentic full-image watermark singular-value reconstruction"],
+        "eligibility_reason": "Common-protocol 4096-bit blind transform control only; never identify its NC with the 2024 paper's published method.",
+    },
     "dct_dm_qim_chen2001": {
         "native_status": "paper_exact_pseudorandom_binary_dither_modulation_declared_dct_adapter",
         "common_adapter_status": "paper_modulation_common_image_adapter",

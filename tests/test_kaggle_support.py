@@ -10,8 +10,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_kaggle_shell_scripts_parse():
     scripts = [
-        ROOT / "kaggle.sh",
-        ROOT / "kaggle_full_benchmark_with_ablation.sh",
         ROOT / "scripts" / "kaggle_setup.sh",
         ROOT / "scripts" / "kaggle_pipeline.sh",
     ]
@@ -57,13 +55,11 @@ def test_kaggle_dataset_selector_uses_all_bmp_except_lena_and_two_png(tmp_path):
     assert manifest["watermark_selection"]["count"] == 2
 
 
-def test_run_script_exposes_kaggle_commands():
-    result = subprocess.run(
-        ["bash", str(ROOT / "run.sh"), "help"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    assert "kaggle-setup" in result.stdout
-    assert "kaggle-quick" in result.stdout
-    assert "kaggle-full" in result.stdout
+def test_notebook_entrypoint_is_current():
+    notebook = ROOT / "KAGGLE_ONE_CELL.py"
+    assert notebook.is_file()
+    text = notebook.read_text(encoding="utf-8")
+    assert "scripts/kaggle_pipeline.sh" in text
+    assert "git" in text and "clone" in text and "REPO_URL" in text
+    assert "run_recent_svd_paper_structure.py" in text
+    compile(text, str(notebook), "exec")

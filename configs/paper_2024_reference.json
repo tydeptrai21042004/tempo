@@ -1,0 +1,34 @@
+{
+  "reference_id": "sudrajat_ernawan_amrullah_2024",
+  "doi": "10.52866/ijcsm.2024.05.03.043",
+  "official_article": "https://ijcsm.researchcommons.org/ijcsm/vol5/iss3/31/",
+  "title": "Robust Image Watermarking Based on LiftingWavelet Transfrom-Hessenberg Decomposition for Copyright Protection",
+  "page_implemented": 700,
+  "equations": [
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16 corrected inverse",
+    "17",
+    "18",
+    "19",
+    "20",
+    "21",
+    "22"
+  ],
+  "reproduction": "equation-level independent; not original author code",
+  "detector": "informed",
+  "requires_original_host_singular_values": true,
+  "does_not_supply_4096_independent_blind_bits": true,
+  "author_source_available_in_package": false,
+  "default_reconstruction": "paper2024_eq22",
+  "original_coding_differences": [
+    "declared Haar level R=3 to match 512x512 host to 64x64 logo",
+    "corrected inverse Hessenberg similarity includes P.T",
+    "grayscale native cover derived from supplied RGB hosts",
+    "alpha selected only on three development hosts"
+  ]
+}

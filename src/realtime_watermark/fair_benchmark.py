@@ -46,6 +46,7 @@ STEP_BOUNDS: dict[str, tuple[float, float]] = {
     "ca_qim_a2_mao2024": (1.0, 160.0),
     "dew_langelaar2001": (50.0, 10000.0),
     "proposal": (0.5, 100.0),
+    "haar_hd_svd_qim_adapter2024": (1.0, 180.0),
 }
 
 FIDELITY_TIER = {m: fidelity_tier(m) for m in IMAGE_BENCHMARK_METHODS}

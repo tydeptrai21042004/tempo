@@ -21,7 +21,7 @@ def test_metric_applicability_contains_every_generic_metric():
 
 def test_quick_all_metrics_has_complete_schema(tmp_path: Path):
     root = Path(__file__).resolve().parents[1]
-    host = root / "data" / "user_dataset" / "host" / "lenna.bmp"
+    host = root / "data" / "user_dataset" / "host" / "baboon.bmp"
     result = run_all_methods_all_metrics(
         host_paths=[host], watermark_path=None, out_dir=tmp_path,
         methods=["dct_dm_qim_chen2001", "dct_spread_spectrum_cox1997"],

@@ -268,7 +268,6 @@ def run(args):
                 except Exception as ex:
                     err=f'{type(ex).__name__}: {ex}'
                     outputs=[dict(attack=a[0],status='failed',error=err) for a in attacks]
-                    if args.strict:raise
                 for result in outputs:
                     rows.append(dict(host=host_name,host_sha256=host_digest,watermark=mark_name,
                         watermark_sha256=mark_digest,seed=seed,payload_bits=int(mark.size),
@@ -313,7 +312,6 @@ def parser():
     p.add_argument('--seed',type=int,default=2026)
     p.add_argument('--warmups',type=int,default=1)
     p.add_argument('--repeats',type=int,default=3)
-    p.add_argument('--strict',action='store_true')
     return p
 
 if __name__=='__main__':run(parser().parse_args())

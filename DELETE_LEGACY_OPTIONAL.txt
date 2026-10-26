@@ -1,0 +1,10 @@
+# Optional GitHub cleanup (NOT performed by the patch ZIP).
+# These files exist in tempo-main(10).zip but are not called by the new runner.
+# Remove via git rm only if you do not need their historical patch information.
+scripts/strict_scientific_gate.py
+APPLY_TEMPO_SCIENTIFIC_PATCH.py
+KAGGLE_TEMPO_FINAL_ONE_CELL.py
+KAGGLE_TEMPO_FRESH_CORRECTED_ONE_CELL.py
+KAGGLE_TEMPO_STRICT_FULL_ONE_CELL.py
+KAGGLE_MMWATERMARK_ORIGINAL_ONE_CELL.py
+KAGGLE_KODAK_FULL_EXTERNAL_ONE_CELL.py

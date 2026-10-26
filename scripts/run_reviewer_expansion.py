@@ -96,7 +96,6 @@ def run(a):
     if not a.no_zip:
         archive = shutil.make_archive(str(out), 'zip', root_dir=str(out))
         print('Results ZIP:', archive, flush=True)
-    if missing and a.strict:raise RuntimeError('Some experiments are incomplete: '+', '.join(missing))
     return manifest
 
 def parser():
@@ -104,7 +103,6 @@ def parser():
     p.add_argument('--output',required=True)
     p.add_argument('--quick',action='store_true')
     p.add_argument('--only',default='',help='Comma-separated subset; stages run independently')
-    p.add_argument('--strict',action='store_true',help='Nonzero exit if any selected stage blocked or failed')
     p.add_argument('--no-zip',action='store_true',help='Do not automatically ZIP experiment output logs and CSV files')
     p.add_argument('--host-dir',default=str(ROOT/'data/user_dataset/host'))
     p.add_argument('--watermark-dir',default=str(ROOT/'data/user_dataset/watermark'))

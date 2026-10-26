@@ -22,10 +22,11 @@ from .core import (
     save_json,
 )
 from .methods import warmup_numba
-from .registry import COMMON_VIDEO_METHODS, embed, extract, normalize_method_id
+from .registry import COMMON_VIDEO_METHODS, MODERN_ADAPTER_METHODS, embed, extract, normalize_method_id
 from .proposals.jilp_qim.method import _extract_payload_bits_confidence, _normalize_jilp_key
 
 REALTIME_VIDEO_METHODS = tuple(COMMON_VIDEO_METHODS)
+# Modern adapters remain opt-in, never silently added to the historical benchmark.
 
 
 @dataclass
@@ -200,7 +201,7 @@ def embed_video_method(
 ) -> dict[str, Any]:
     del repeat  # every frame carries exactly one complete common payload
     method_id = normalize_method_id(method_id)
-    if method_id not in REALTIME_VIDEO_METHODS:
+    if method_id not in REALTIME_VIDEO_METHODS and method_id not in MODERN_ADAPTER_METHODS:
         raise KeyError(f"Unsupported video method: {method_id}")
     method_params = dict(method_params or {})
     warmup_numba()

@@ -13,6 +13,7 @@ from .baselines import (
     ca_qim_a2_mao2024,
     dct_spread_spectrum_cox1997,
     dew_langelaar2001,
+    haar_hd_svd_qim_adapter2024,
 )
 from .proposals.jilp_qim import method as proposal_method
 from .proposals import rcme_qim as rcme_method
@@ -25,6 +26,7 @@ METHOD_MODULES = {
     ca_qim_a2_mao2024.METHOD_ID: ca_qim_a2_mao2024,
     dct_spread_spectrum_cox1997.METHOD_ID: dct_spread_spectrum_cox1997,
     dew_langelaar2001.METHOD_ID: dew_langelaar2001,
+    haar_hd_svd_qim_adapter2024.METHOD_ID: haar_hd_svd_qim_adapter2024,
     proposal_method.METHOD_ID: proposal_method,
     rcme_method.METHOD_ID: rcme_method,
 }
@@ -37,6 +39,7 @@ METHOD_ALIASES: dict[str, str] = {
     "ca_qim": ca_qim_a2_mao2024.METHOD_ID,
     "cox": dct_spread_spectrum_cox1997.METHOD_ID,
     "cox_ss": dct_spread_spectrum_cox1997.METHOD_ID,
+    "haar_hd_svd_qim": haar_hd_svd_qim_adapter2024.METHOD_ID,
     "dew": dew_langelaar2001.METHOD_ID,
     "differential_energy": dew_langelaar2001.METHOD_ID,
     "jilp_qim": proposal_method.METHOD_ID,
@@ -64,6 +67,9 @@ PAPER_NATIVE_METHODS: list[str] = [
     dct_spread_spectrum_cox1997.METHOD_ID,
 ]
 COMMON_IMAGE_METHODS = [*PAPER_NATIVE_METHODS, PROPOSAL_METHOD]
+# Separate comparator tier: independently implemented modern transform control.
+# Never label this as original 2024 paper reproduction.
+MODERN_ADAPTER_METHODS = [haar_hd_svd_qim_adapter2024.METHOD_ID]
 COMMON_VIDEO_METHODS = [
     dct_dm_qim_chen2001.METHOD_ID,
     dct_stdm_qim_chen2001.METHOD_ID,
@@ -82,7 +88,7 @@ STREAM_BENCHMARK_METHODS = [
 DIAGNOSTIC_METHODS: list[str] = [rcme_method.METHOD_ID]
 IMAGE_BENCHMARK_METHODS = list(COMMON_IMAGE_METHODS)
 ALL_METHODS = [*BASELINE_METHODS, PROPOSAL_METHOD]
-ALL_PUBLIC_METHOD_IDS = sorted(set(ALL_METHODS) | set(METHOD_ALIASES) | set(DIAGNOSTIC_METHODS))
+ALL_PUBLIC_METHOD_IDS = sorted(set(ALL_METHODS) | set(METHOD_ALIASES) | set(DIAGNOSTIC_METHODS) | set(MODERN_ADAPTER_METHODS))
 
 
 def normalize_method_id(method_id: str) -> str:
@@ -90,7 +96,7 @@ def normalize_method_id(method_id: str) -> str:
 
 
 METHOD_REFS: dict[str, MethodRef] = {
-    method_id: METHOD_MODULES[method_id].METHOD_REF for method_id in [*ALL_METHODS, *DIAGNOSTIC_METHODS]
+    method_id: METHOD_MODULES[method_id].METHOD_REF for method_id in [*ALL_METHODS, *MODERN_ADAPTER_METHODS, *DIAGNOSTIC_METHODS]
 }
 
 
@@ -220,7 +226,7 @@ def method_metadata() -> list[dict[str, Any]]:
 __all__ = [
     "METHOD_MODULES", "BASELINE_METHODS", "PROPOSAL_METHOD", "PAPER_NATIVE_METHODS",
     "COMMON_IMAGE_METHODS", "COMMON_VIDEO_METHODS", "STREAM_BENCHMARK_METHODS", "DIAGNOSTIC_METHODS",
-    "IMAGE_BENCHMARK_METHODS", "ALL_METHODS", "ALL_PUBLIC_METHOD_IDS", "METHOD_REFS",
+    "IMAGE_BENCHMARK_METHODS", "MODERN_ADAPTER_METHODS", "ALL_METHODS", "ALL_PUBLIC_METHOD_IDS", "METHOD_REFS",
     "METHOD_ALIASES", "normalize_method_id", "embed", "prepare_embedding",
     "embed_prepared", "extract", "method_metadata",
 ]

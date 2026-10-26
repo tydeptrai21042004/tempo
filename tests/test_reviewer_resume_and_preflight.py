@@ -11,11 +11,15 @@ from scripts import reviewer_completeness
 ROOT=Path(__file__).resolve().parents[1]
 
 
-def test_real_dataset_preflight_is_valid():
-    report=inspect(ROOT/'data/user_dataset/host',ROOT/'data/user_dataset/watermark')
-    # Raw upstream has 13 BMPs including Lena. The selected 12-host directory
-    # is the one expected to pass; raw input should fail early by design.
-    assert report['status']=='failed' and report['host_count']==13
+def test_real_dataset_preflight_is_valid(tmp_path):
+    import subprocess,sys
+    selected=tmp_path/'selected'
+    subprocess.run([sys.executable,str(ROOT/'scripts/select_kaggle_dataset.py'),
+        '--source-data',str(ROOT/'data/user_dataset'),
+        '--output',str(selected),'--manifest-dir',str(tmp_path/'manifest')],check=True)
+    report=inspect(selected/'host',selected/'watermark')
+    # The original Git checkout can retain Lena; the selected benchmark must not.
+    assert report['status']=='passed' and report['host_count']==12
     assert report['watermark_count']==2 and len(report['watermarks'])==2
     assert all(0.0<r['one_fraction']<1.0 for r in report['watermarks'])
 
