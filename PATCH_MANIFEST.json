@@ -1,0 +1,32 @@
+{
+  "patch_title": "TEMPO focused evidence and honest video comparator revisions",
+  "base_archive": "tempo-main (2).zip",
+  "changed_files": [
+    "scripts/run_official_mmwatermark_tempo.py",
+    "scripts/run_multiwatermark_video.py",
+    "scripts/kaggle_pipeline.sh",
+    "scripts/reviewer_completeness.py",
+    "scripts/generate_manuscript_figures.py",
+    "scripts/export_result_gallery.py"
+  ],
+  "new_files": [
+    "TEMPO_FOCUSED_REVISION_README.md",
+    "scripts/repair_existing_evidence.py",
+    "scripts/diagnose_haar_adapter_video.py",
+    "scripts/export_common_video_baselines.py",
+    "tests/test_multiclass_video_evidence_revision.py"
+  ],
+  "file_sha256": {
+    "TEMPO_FOCUSED_REVISION_README.md": "de372ab50017eee0fca3fb6bb91bfee376e2a28e49c90eace4bea8f24e4130f1",
+    "scripts/diagnose_haar_adapter_video.py": "75cd26ba3bca9d7ad5a32ce21b8079e85eed8cfa2b7938b095a50e5710f88b85",
+    "scripts/export_common_video_baselines.py": "54e17ce9c7996b3fd69ded7532aed8f8ec5c4240b4d38522ea555ba4634beea2",
+    "scripts/export_result_gallery.py": "2503fd443807c7dfa2a5fa03b1e290982f70603b56bf2ac111ac047665a761a5",
+    "scripts/generate_manuscript_figures.py": "a714d08b809a78be3be98ebed6fbba212549e1586e45cb7b8ffd999428ec6ccf",
+    "scripts/kaggle_pipeline.sh": "ae33b59476069d6d0c26e33c61beb008b8f1ebc261199420d370ec0a2e02cfde",
+    "scripts/repair_existing_evidence.py": "f5f3dffc1526b8dc39819eb7dacb95384cef9824ac02a296a96b5f454776dc0a",
+    "scripts/reviewer_completeness.py": "73986a90afca295ca82affdb1bad02972e1dc84d41cd4600722bd7d7e241a0df",
+    "scripts/run_multiwatermark_video.py": "f90027742500d88fb3e8fe8b655e395251973f3577337d5edb98510ff0c217ff",
+    "scripts/run_official_mmwatermark_tempo.py": "87b715d7c4b448962568415d907fa3d15c962f65dfccc1aac95b1ee4f3e52119",
+    "tests/test_multiclass_video_evidence_revision.py": "00e2136355dfc42f56246756f439b32b7067043757bc4e039bc96145838e7044"
+  }
+}

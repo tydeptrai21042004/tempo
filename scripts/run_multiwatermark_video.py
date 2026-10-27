@@ -139,7 +139,15 @@ def main() -> None:
             )
             recovered_stats = watermark_statistics(recovered)
             disclosure = NATIVE_DISCLOSURES.get(method_id)
-            detector_type = disclosure.detector_type if disclosure is not None else "blind"
+            if method_id == 'proposal':
+                detector_type = 'blind'
+            elif disclosure is not None:
+                detector_type = disclosure.detector_type
+            elif method_id == 'haar_hd_svd_qim_adapter2024':
+                # Independent adapter is defined as blind; it is not paper-exact.
+                detector_type = 'blind'
+            else:
+                raise ValueError(f'No verified detector class for {method_id}; refusing to label it blind')
             accuracy = float(bit_accuracy(original, recovered))
             bit_error = float(ber(original, recovered))
             rows.append(

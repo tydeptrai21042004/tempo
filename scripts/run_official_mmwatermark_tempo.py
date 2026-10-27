@@ -333,8 +333,8 @@ def main(args):
     if not args.severities or not 1 <= min(args.severities) <= max(args.severities) <= 5:
         raise ValueError('Official severity must be in 1..5')
     selected_methods=[normalize_method_id(s.strip()) for s in args.methods.split(',') if s.strip()]
-    if not selected_methods or any(s not in COMMON_IMAGE_METHODS for s in selected_methods):
-        raise ValueError('Only registered TEMPO common-image methods are allowed')
+    if selected_methods != ['proposal']:
+        raise ValueError('The official external MMWatermark protocol is TEMPO-proposal ONLY; use internal protocols for baselines')
     if args.official_repo.resolve().is_relative_to(args.out_dir.resolve()):
         raise ValueError('Official Git checkout must not be under result output folder')
     upstream_sha=prepare_repo(args.official_repo,clone=not args.no_clone)

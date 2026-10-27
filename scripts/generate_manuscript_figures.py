@@ -207,10 +207,12 @@ def result_gallery(out,root):
         original=np.asarray(Image.open(wm_dir/'original.png').convert('L'))
         ordered=sorted(items,key=lambda z:(z['method']!='proposal',z['method']))
         images=[original]+[np.asarray(Image.open(wm_dir/(x['method']+'_decoded.png')).convert('L')) for x in ordered]
-        short={'proposal':'Proposed','dct_dm_qim_chen2001':'DCT DM-QIM',
-               'haar_hd_svd_qim_adapter2024':'Haar-HD-SVD QIM'}
-        labels=['Original']+[f"{short.get(x['method'],x['method'])}\nNC={x['nc']:.3f}" for x in ordered]
-        fig,axes=plt.subplots(1,len(images),figsize=(max(7,2.1*len(images)),2.55),layout='constrained')
+        short={'proposal':'Proposed','dct_dm_qim_chen2001':'DM-QIM',
+               'dct_stdm_qim_chen2001':'STDM-QIM','dct_iss_malvar2003':'ISS',
+               'ca_qim_a2_mao2024':'CA-QIM-A2',
+               'haar_hd_svd_qim_adapter2024':'Independent Haar-HD-SVD QIM'}
+        labels=['Original']+[f"{short.get(x['method'],x['method'])} ({x['detector_type'].replace('_','-')})\nNC={x['nc']:.3f}, PSNR={x['psnr_db']:.1f} dB" for x in ordered]
+        fig,axes=plt.subplots(1,len(images),figsize=(max(9,2.3*len(images)),2.75),layout='constrained')
         for ax,arr,label in zip(np.atleast_1d(axes),images,labels):
             ax.imshow(arr,cmap='gray',vmin=0,vmax=255,interpolation='nearest')
             ax.set_title(label,fontsize=7);ax.axis('off')

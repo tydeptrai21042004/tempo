@@ -3,6 +3,7 @@
 from __future__ import annotations
 import argparse,csv,json
 from pathlib import Path
+import importlib.util
 
 
 def rows(path):
@@ -188,14 +189,41 @@ def check(root:Path,mode='full'):
            '2024 informed method: development-only alpha calibration missing')
     gallery_path=root/'result_figure_sources'/'baboon'/'gallery_manifest.json'
     gallery=json.loads(gallery_path.read_text()) if gallery_path.is_file() else {}
-    record('result_figure_evidence',gallery.get('status')=='complete' and bool(gallery.get('panels')),
-           'Figures must have a verified matched-Baboon replay, not hand-created values')
-    vcomp=rows(root/'video_common_blind_baselines'/'all_watermarks_video_summary.csv')
-    video_methods={r.get('method_id') for r in vcomp}
-    record('same_video_blind_baseline_control',
-           bool(vcomp) and {'proposal','dct_dm_qim_chen2001'}.issubset(video_methods)
-           and (not full or len({r.get('watermark_name') for r in vcomp})==2),
-           'A fair common-video blind control must be measured on the same original video input')
+    # Matched-Baboon replay is meaningful only with BOTH watermarks and every
+    # ordinary benchmark method. A success marker alone cannot certify panels.
+    panels=gallery.get('panels',[])
+    gallery_methods={'proposal','dct_dm_qim_chen2001','dct_stdm_qim_chen2001',
+                     'dct_iss_malvar2003','ca_qim_a2_mao2024'}
+    gallery_wm={r.get('watermark') for r in panels}
+    gallery_keys=[(r.get('watermark'),r.get('method')) for r in panels]
+    gallery_valid=(gallery.get('status')=='complete' and bool(panels)
+        and len(gallery_keys)==len(set(gallery_keys))
+        and (not full or (len(gallery_wm)==2 and
+            all({r['method'] for r in panels if r['watermark']==wm}==gallery_methods
+                for wm in gallery_wm)))
+        and all((gallery_path.parent/r['decoded_png']).is_file()
+                and (gallery_path.parent/r['decoded_png']).stat().st_size>0
+                and r.get('detector_type') in {'blind','semi_blind','non_blind'}
+                and isinstance(r.get('primary_rank_eligible'),bool)
+                for r in panels))
+    record('result_figure_evidence',gallery_valid,
+           'Both watermark galleries require verified matched-case decodes, PSNR and original detector classes')
+
+    # Verify source hashes, frame counts, watermark identity, codec, and all
+    # detector classes; never filter the semi-blind comparator to force blindness.
+    video_export=root/'video_common_baselines'
+    multiclass_ok=False
+    try:
+        script=Path(__file__).resolve().parent/'export_common_video_baselines.py'
+        spec=importlib.util.spec_from_file_location('tempo_common_video_verifier',script)
+        module=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        multiclass_ok=module.verify_export(root/'video',root/'video_sources'/'corpus.json',
+                                         video_export,full=full)
+    except (ImportError,FileNotFoundError,AttributeError,ValueError,OSError):
+        multiclass_ok=False
+    record('same_video_multiclass_baseline_control',multiclass_ok,
+           'Verified common original-video and codec comparison is required, preserving blind and semi-blind methods at native unmatched PSNR')
     record('structural_ablation',any((root/'ablation').rglob('*.csv')),
            'No structural ablation CSVs')
     # These items are intentionally NOT checked off without external evidence.
@@ -221,7 +249,7 @@ def check(root:Path,mode='full'):
         'adversarial pilot interference':'targeted_carrier_attenuation'},
       'Original Reviewer 5':{'off-grid rotation':'offgrid_and_targeted_attacks',
         'targeted DCT suppression':'targeted_carrier_attenuation',
-        'ROC/FPR':'threshold_calibrated_detection','recent video adapter':'same_video_blind_baseline_control','recent faithful author implementation':'recent_faithful_paper_baselines',
+        'ROC/FPR':'threshold_calibrated_detection','same-video multi-class comparison':'same_video_multiclass_baseline_control','recent faithful author implementation':'recent_faithful_paper_baselines',
         'live 4096-bit FPS':'real_video_stream_deadlines','matched PSNR':'matched_psnr_same_case_paired'},
       'Example DWT-Hessenberg review':{'independent tuning':'data_disjoint',
         'wrong-key security':'threshold_calibrated_detection','noise severity':'offgrid_and_targeted_attacks',

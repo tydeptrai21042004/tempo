@@ -357,18 +357,25 @@ if "$PYTHON_BIN" scripts/run_multiwatermark_fair_benchmark.py \
   "$PYTHON_BIN" scripts/reviewer_matched_pairs.py \
     --matched-dir "$REPORT_ROOT/modern_baselines_matched_psnr" \
     --out-dir "$REPORT_ROOT/modern_baselines_matched_psnr" --seed "$SEED"
-  if [[ "$MODE" == "full" ]]; then
-    "$PYTHON_BIN" scripts/export_result_gallery.py \
-      --matched-dir "$REPORT_ROOT/modern_baselines_matched_psnr" \
-      --host-dir "$TEST_HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
-      --proposal-config "$SELECTED_CONFIG" \
-      --out-dir "$REPORT_ROOT/result_figure_sources/baboon" || \
-      echo 'Baboon matched gallery unavailable: do not fabricate figure.' >&2
-  fi
 else
   echo 'Modern transform comparison execution failed; no false benchmark rows added.' >&2
 fi
 
+fi
+
+# This gallery uses the ordinary five-method measured matched-PSNR output,
+# including the semi-blind CA-QIM-A2 method under its original detector class.
+# It must not depend on the optional independent Haar/SVD experiment above.
+if [[ "$MODE" == "full" ]]; then
+  stage "9C2G. VERIFIED BABOON GALLERY FROM PRIMARY MATCHED-PSNR ROWS"
+  if ! "$PYTHON_BIN" scripts/export_result_gallery.py \
+      --matched-dir "$REPORT_ROOT/matched_psnr" \
+      --host-dir "$TEST_HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
+      --proposal-config "$SELECTED_CONFIG" \
+      --out-dir "$REPORT_ROOT/result_figure_sources/baboon"; then
+    echo 'Baboon evidence unavailable: replay must match original NC and PSNR.' >&2
+    printf '%s\n' 'unavailable: matched replay failure; no fabricated figures' > "$REPORT_ROOT/baboon_gallery_incomplete.txt"
+  fi
 fi
 
 stage "9C2B. DOI-TRACEABLE 2024 LWT-HD-SVD PAPER EQUATIONS (GRAY/INFORMED)"
@@ -446,17 +453,36 @@ if [[ "${VIDEO_AVAILABLE:-0}" == "1" || "$RESUME_FROM_VIDEO" == "1" ]]; then
     --max-frames "$VIDEO_FRAMES" --stream-frames "$STREAM_FRAMES" \
     --codec "$VIDEO_CODEC" --python "$PYTHON_BIN" \
     --channels "$VIDEO_STREAM_CHANNELS" --resolutions "$STREAM_RESOLUTIONS" "${SUITE_RESUME_ARGS[@]}"; then
-    stage "9A0. RECENT BLIND TRANSFORM ADAPTER: REAL INPUT VIDEO COMPARISON"
+    # Independent 2024-inspired adapter is diagnostic only, never mandatory.
+    if [[ "${TEMPO_RUN_INDEPENDENT_HAAR_QIM_CONTROL:-0}" == "1" ]]; then
+    stage "9A0. OPTIONAL INDEPENDENT HAAR-HD-SVD BLIND VIDEO ADAPTER (NOT PAPER-EXACT)"
     if [[ -n "${FIRST_CORPUS_VIDEO:-}" && -f "$FIRST_CORPUS_VIDEO" ]]; then
       MODERN_VIDEO_FRAMES=120
       if [[ "$MODE" == "quick" ]]; then MODERN_VIDEO_FRAMES=12; fi
-      "$PYTHON_BIN" scripts/run_multiwatermark_video.py \
+      if "$PYTHON_BIN" scripts/run_multiwatermark_video.py \
         --watermark-dir "$WATERMARK_DIR" --proposal-config "$SELECTED_CONFIG" \
         --out-dir "$REPORT_ROOT/modern_video_adapter" --input "$FIRST_CORPUS_VIDEO" \
         --methods 'proposal,haar_hd_svd_qim_adapter2024' \
         --max-frames "$MODERN_VIDEO_FRAMES" --warmup-frames 2 \
-        --seed "$SEED" --wm-size "$WM_SIZE" --codec "$VIDEO_CODEC" || \
-        echo 'Recent video adapter experiment incomplete; inspect logs.' >&2
+        --seed "$SEED" --wm-size "$WM_SIZE" --codec "$VIDEO_CODEC"; then
+        "$PYTHON_BIN" scripts/diagnose_haar_adapter_video.py \
+          --video-dir "$REPORT_ROOT/modern_video_adapter" \
+          --out "$REPORT_ROOT/modern_video_adapter/adapter_recovery_diagnostic.json" || \
+          echo 'Independent adapter diagnostic unavailable; no comparative claim permitted.' >&2
+      else
+        echo 'Recent independent video adapter experiment incomplete; inspect logs.' >&2
+      fi
+    fi
+    fi
+    if [[ "$MODE" == "full" ]]; then
+      stage "9A0B. VERIFY COMMON-SOURCE VIDEO BASELINES (PRESERVE DETECTOR CLASS)"
+      if ! "$PYTHON_BIN" scripts/export_common_video_baselines.py \
+          --video-dir "$REPORT_ROOT/video" \
+          --corpus "$REPORT_ROOT/video_sources/corpus.json" \
+          --out-dir "$REPORT_ROOT/video_common_baselines" --mode full; then
+        echo 'Common-source video verification failed; no comparison claim can be made.' >&2
+        printf '%s\n' 'unavailable: common video evidence failed verification' > "$REPORT_ROOT/video_common_baselines_incomplete.txt"
+      fi
     fi
     stage "9A. VERIFY WALL-CLOCK THROUGHPUT DENOMINATORS"
     THROUGHPUT_ARGS=()
@@ -473,10 +499,12 @@ fi
 
 
 stage "9F. RENDER MANUSCRIPT PDF FIGURES FROM REAL EVIDENCE"
+FIGURE_ARGS=()
+if [[ "$MODE" == "full" ]]; then FIGURE_ARGS+=(--include-nonresult-figures); fi
 "$PYTHON_BIN" scripts/generate_manuscript_figures.py \
   --results-root "$REPORT_ROOT" --host-dir "$HOST_DIR" \
   --watermark-dir "$WATERMARK_DIR" --config "$SELECTED_CONFIG" \
-  --out-dir "$REPORT_ROOT/manuscript_figures" || \
+  --out-dir "$REPORT_ROOT/manuscript_figures" "${FIGURE_ARGS[@]}" || \
     echo "Figure-generation execution error; see diagnostics" >&2
 
 stage "10. EXPORT EVIDENCE AND PACKAGE RESULTS"
