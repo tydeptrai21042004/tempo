@@ -118,34 +118,41 @@ The package intentionally has **no scientific acceptance gate**. It does **not**
 
 The source code is released under the repository `LICENSE`; the source papers and independently hosted video/Kodak datasets retain their own terms. Cite the paper when using the evaluation results and cite the original papers for baseline algorithms.
 
-## Applying the GitHub patch and running the full Kaggle clone cell
+## Frozen internal attacks and reference-style result PDFs
 
-For an existing GitHub repository matching `tempo-main(10).zip`, the small
-`TEMPO_GITHUB_DELTA_ONLY.zip` release contains only newly added and modified
-source files. Extract its `tempo-main/` directory on top of your existing Git
-working tree, preserving paths, and commit the changes to `main` **before**
-running Kaggle. If using GitHub web upload, upload files to their exact relative
-paths (not into an extra `tempo-main/` folder). The patch deliberately does not
-include unchanged host images.
+All **primary internal RGB image experiments** share one deterministic registry:
+`configs/attacks/reviewer_unified_46.json` = **45 attacked conditions + one clean
+control**. The label `reviewer46` denotes total conditions, not 46 attacks.
+No new attack is added merely to match an illustrative PDF. The official
+MMWatermark/Kodak catalog is **external and independent**, never mixed into
+internal NC means. Paper-native signal-channel sweeps and targeted adversarial
+stress diagnostics are separately labeled, not counted as additional internal
+common-protocol conditions.
 
-Paste `KAGGLE_CLONE_ALL_EXPERIMENTS.py` into a single Kaggle notebook cell:
-Accelerator=None, Internet=ON. It clones the public repository, checks the
-required patch files, records the Git commit, runs the full internal experiments,
-executes the separate informed 2024 paper-equation reproduction, and attempts
-the official MMWatermark robustness protocol on Kodak-24. The optional **internal**
-Kodak 109-attacks experiment is off by default; the official MMWatermark-Kodak
-route is enabled. `PROFILE='internal'` or `PROFILE='official_kodak'` can be used
-to execute the two expensive tracks in independent Kaggle sessions. `smoke`
-checks a small subset and must not be reported as manuscript results.
+After the full held-out matched-PSNR benchmark, the pipeline runs
+`scripts/export_reference_style_result_figures.py` and creates exactly two
+additional, manuscript-style **results** PDFs:
 
-Kaggle session time limits can interrupt a full run. `run_metadata/stage_status.json`
-and periodic `TEMPO_EVIDENCE_*.zip` checkpoints record completed, failed, and
-unexecuted stages. The cell does **not** claim that a time-limited run has
-completed all experiments. `scripts/reviewer_completeness.py` is diagnostic,
-not a scientific success gate. `scripts/strict_scientific_gate.py` is obsolete
-and should be deleted from GitHub; no new runner invokes it.
+- `reports/manuscript_figures/fig_extracted_comparison.pdf`: five columns
+  (original logo, Proposed, DCT DM-QIM, STDM-QIM, ISS) and five representative
+  conditions **selected from the same frozen 45**. These methods are the
+  independently implemented blind common-protocol controls, not Guo, Nha or
+  Su implementations. Any ineligible PSNR pair remains marked as such in the
+  accompanying observation CSV.
+- `reports/manuscript_figures/fig_Tiffani.pdf`: three columns and six panels
+  per row-group page, showing the real attacked Tiffany RGB host alongside the
+  recovered Cc-logo watermark, the measured NC and BER, for **all 45 attacks
+  plus clean** (46 panels across three pages).
 
-The 2024 DOI method remains a grayscale **informed** side-information baseline,
-not a 4096-bit blind video competitor. The modern independent Haar–HD–SVD–QIM
-experiment is excluded by default because it is not a reproduction of the
-paper. This is a scientific comparison limit, not a code execution gate.
+Both PDFs are generated from actual decoder outputs using the per-case frozen
+PSNR steps in `matched_psnr_protocol.json`. Every NC must agree with
+`matched_psnr_per_attack.csv` within CSV roundoff, and NC/BER must satisfy the
+same bipolar convention used in the manuscript. A missing row, changed attack
+registry, changed configuration or mismatch means the PDF is not generated;
+no synthetic placeholder or copied sample-paper NC is used. The export also
+writes `reference_style_figure_observations.csv` and
+`reference_style_figures_manifest.json`, including SHA-256 provenance.
+
+The two supplied example PDFs are **layout references only**. They do not
+change the TEMPO proposal, authorize relabeling a new adapter as a published
+Su (2016) method, or justify importing unrelated benchmark values.

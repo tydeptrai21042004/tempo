@@ -337,19 +337,6 @@ stage "9C2. STRICT COMMON-PAIR MATCHED-PSNR EFFECTS"
   --matched-dir "$REPORT_ROOT/matched_psnr" \
   --out-dir "$REPORT_ROOT/matched_psnr" --seed "$SEED"
 
-# Manuscript result-panel sources must always use the real, primary matched
-# experiment (not the independent experimental Haar/SVD control).
-if [[ "$MODE" == "full" ]]; then
-  stage "9C2G. REPLAY AND VERIFY MATCHED-PROTOCOL BABOON IMAGE PANELS"
-  if ! "$PYTHON_BIN" scripts/export_result_gallery.py \
-    --matched-dir "$REPORT_ROOT/matched_psnr" \
-    --host-dir "$TEST_HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
-    --proposal-config "$SELECTED_CONFIG" \
-    --out-dir "$REPORT_ROOT/result_figure_sources/baboon"; then
-    echo 'Manuscript Baboon source images missing or inconsistent; no replacement images fabricated.' >&2
-  fi
-fi
-
 if [[ "${TEMPO_RUN_INDEPENDENT_HAAR_QIM_CONTROL:-0}" == "1" ]]; then
 stage "9C2A. OPTIONAL INDEPENDENT 4096-BIT BLIND CONTROL (NOT PUBLISHED PAPER)"
 # Important: this is an *independent* blind QIM adapter, NOT the original 2024
@@ -370,6 +357,14 @@ if "$PYTHON_BIN" scripts/run_multiwatermark_fair_benchmark.py \
   "$PYTHON_BIN" scripts/reviewer_matched_pairs.py \
     --matched-dir "$REPORT_ROOT/modern_baselines_matched_psnr" \
     --out-dir "$REPORT_ROOT/modern_baselines_matched_psnr" --seed "$SEED"
+  if [[ "$MODE" == "full" ]]; then
+    "$PYTHON_BIN" scripts/export_result_gallery.py \
+      --matched-dir "$REPORT_ROOT/modern_baselines_matched_psnr" \
+      --host-dir "$TEST_HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
+      --proposal-config "$SELECTED_CONFIG" \
+      --out-dir "$REPORT_ROOT/result_figure_sources/baboon" || \
+      echo 'Baboon matched gallery unavailable: do not fabricate figure.' >&2
+  fi
 else
   echo 'Modern transform comparison execution failed; no false benchmark rows added.' >&2
 fi
@@ -398,6 +393,22 @@ fi
 stage "9C3. VERIFY THE SAME 46 ATTACKS FOR EVERY COMMON-PROTOCOL METHOD"
 "$PYTHON_BIN" scripts/audit_internal_unified_coverage.py \
   --reports "$REPORT_ROOT" --out "$REPORT_ROOT/validation/internal_coverage.json"
+
+# Results-only reference-style figures: 5-column extracted-logo comparison
+# plus the full 45-attacks + clean Tiffany montage (three pages).
+# Uses archived matched-PSNR rows and aborts figure generation if replayed
+# NC differs; a missing figure does not stop other experiments or invent data.
+if [[ "$MODE" == "full" ]]; then
+  stage "9C4. VERIFIED 45-ATTACK RESULT FIGURES (REFERENCE-STYLE PDFs)"
+  if ! "$PYTHON_BIN" scripts/export_reference_style_result_figures.py \
+      --matched-dir "$REPORT_ROOT/matched_psnr" \
+      --host-dir "$TEST_HOST_DIR" --watermark-dir "$WATERMARK_DIR" \
+      --config "$SELECTED_CONFIG" \
+      --out-dir "$REPORT_ROOT/result_comparison_figures"; then
+    echo "Reference-style result figures unavailable; see logs, no synthetic evidence." >&2
+    printf '%s\n' 'unavailable: measured NC replay/host/PSNR mismatch' > "$REPORT_ROOT/result_comparison_figures_incomplete.txt"
+  fi
+fi
 
 stage "9D. HOST-CLUSTERED CONFIDENCE INTERVALS AND PAIRED EFFECTS"
 "$PYTHON_BIN" scripts/reviewer_statistics.py \
@@ -435,25 +446,17 @@ if [[ "${VIDEO_AVAILABLE:-0}" == "1" || "$RESUME_FROM_VIDEO" == "1" ]]; then
     --max-frames "$VIDEO_FRAMES" --stream-frames "$STREAM_FRAMES" \
     --codec "$VIDEO_CODEC" --python "$PYTHON_BIN" \
     --channels "$VIDEO_STREAM_CHANNELS" --resolutions "$STREAM_RESOLUTIONS" "${SUITE_RESUME_ARGS[@]}"; then
-    stage "9A0. REAL-INPUT VIDEO COMPARISON (BLIND DCT QIM VS PROPOSED)"
-    # Both are executable blind 4096-bit methods; neither is passed off as a
-    # faithful modern Hessenberg/SVD paper reproduction.
+    stage "9A0. RECENT BLIND TRANSFORM ADAPTER: REAL INPUT VIDEO COMPARISON"
     if [[ -n "${FIRST_CORPUS_VIDEO:-}" && -f "$FIRST_CORPUS_VIDEO" ]]; then
-      VIDEO_COMPARE_FRAMES=120
-      if [[ "$MODE" == "quick" ]]; then VIDEO_COMPARE_FRAMES=12; fi
-      VIDEO_COMPARE_METHODS='proposal,dct_dm_qim_chen2001'
-      VIDEO_COMPARE_DIR="$REPORT_ROOT/video_common_blind_baselines"
-      if [[ "${TEMPO_RUN_INDEPENDENT_HAAR_QIM_CONTROL:-0}" == "1" ]]; then
-        VIDEO_COMPARE_METHODS='proposal,dct_dm_qim_chen2001,haar_hd_svd_qim_adapter2024'
-        VIDEO_COMPARE_DIR="$REPORT_ROOT/video_with_independent_haar_control"
-      fi
+      MODERN_VIDEO_FRAMES=120
+      if [[ "$MODE" == "quick" ]]; then MODERN_VIDEO_FRAMES=12; fi
       "$PYTHON_BIN" scripts/run_multiwatermark_video.py \
         --watermark-dir "$WATERMARK_DIR" --proposal-config "$SELECTED_CONFIG" \
-        --out-dir "$VIDEO_COMPARE_DIR" --input "$FIRST_CORPUS_VIDEO" \
-        --methods "$VIDEO_COMPARE_METHODS" \
-        --max-frames "$VIDEO_COMPARE_FRAMES" --warmup-frames 2 \
+        --out-dir "$REPORT_ROOT/modern_video_adapter" --input "$FIRST_CORPUS_VIDEO" \
+        --methods 'proposal,haar_hd_svd_qim_adapter2024' \
+        --max-frames "$MODERN_VIDEO_FRAMES" --warmup-frames 2 \
         --seed "$SEED" --wm-size "$WM_SIZE" --codec "$VIDEO_CODEC" || \
-        echo 'Real-video method comparison incomplete; inspect its output.' >&2
+        echo 'Recent video adapter experiment incomplete; inspect logs.' >&2
     fi
     stage "9A. VERIFY WALL-CLOCK THROUGHPUT DENOMINATORS"
     THROUGHPUT_ARGS=()
@@ -489,7 +492,7 @@ watermark_rule=both PNG watermarks; quick mode is a smoke subset
 hyperparameter_attack_preset=$HP_ATTACK_PRESET
 image_attack_preset=$IMAGE_ATTACK_PRESET
 internal_attack_manifest=configs/attacks/reviewer_unified_46.json
-internal_attack_conditions=46_including_clean
+internal_attack_conditions=45_attacks_plus_1_clean
 independent_external_kodak_profile=unified109_or_basic
 independent_official_mmwatermark_profile=upstream_catalog
 official_mmwatermark_enabled=${TEMPO_OFFICIAL_MMWATERMARK:-0}

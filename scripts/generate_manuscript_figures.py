@@ -11,6 +11,7 @@ import csv
 import hashlib
 import json
 import math
+import shutil
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -317,6 +318,22 @@ def stream_deadlines(out,root):
     axes[1].tick_params(axis='x',labelrotation=50)
     return export(fig,out/'reviewer_realtime_720p.pdf')
 
+def reference_style_pdf(out,root,filename):
+    """Include an already verified experiment PDF, never remake results here."""
+    source=root/'result_comparison_figures'/filename
+    manifest=source.parent/'reference_style_figures_manifest.json'
+    if not manifest.is_file() or not source.is_file():
+        raise FileNotFoundError('Verified result figure or provenance missing: '+str(source))
+    evidence=json.loads(manifest.read_text(encoding='utf-8'))
+    recorded=evidence.get('pdfs',{}).get(filename,{}).get('sha256')
+    if evidence.get('status')!='COMPLETE' or not recorded or hashlib.sha256(source.read_bytes()).hexdigest()!=recorded:
+        raise RuntimeError('Result PDF SHA256/provenance mismatch: '+filename)
+    destination=out/filename
+    destination.parent.mkdir(parents=True,exist_ok=True)
+    if source.resolve()!=destination.resolve():shutil.copyfile(source,destination)
+    return {'name':filename,'sha256':recorded,'size':destination.stat().st_size}
+
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--results-root',required=True);ap.add_argument('--host-dir',required=True)
@@ -326,7 +343,9 @@ def main():
     root=Path(args.results_root);hostdir=Path(args.host_dir);wmdir=Path(args.watermark_dir)
     out=Path(args.out_dir);out.mkdir(parents=True,exist_ok=True)
     done=[];missing={}
-    stages={'proposal_hyperparameter_multi_panel.pdf':lambda:hyperparams(out,root),
+    stages={'fig_extracted_comparison.pdf':lambda:reference_style_pdf(out,root,'fig_extracted_comparison.pdf'),
+            'fig_Tiffani.pdf':lambda:reference_style_pdf(out,root,'fig_Tiffani.pdf'),
+            'proposal_hyperparameter_multi_panel.pdf':lambda:hyperparams(out,root),
             'baboon_extracted_methods.pdf':lambda:result_gallery(out,root),
             'reviewer_roc.pdf':lambda:roc(out,root),
             'reviewer_capacity_latency.pdf':lambda:capacity(out,root),
@@ -352,7 +371,7 @@ def main():
         'generated':done,'unavailable':missing,'results_root':str(root),
         'config':str(args.config),'no_placeholder_figures':True,
         'notes':['Analysis plots use only executed CSV observations.',
-                 'Baboon panels come from a separately verified matched-condition replay with archived NC.']}
+                 'Result comparison/Tiffany PDFs replay archived matched-PSNR observations and verify NC/BER.']}
     (out/'figures_manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
     print(json.dumps({'generated':len(done),'unavailable':list(missing)},indent=2))
     return 0  # missing figures remain recorded, not a scientific acceptance gate
