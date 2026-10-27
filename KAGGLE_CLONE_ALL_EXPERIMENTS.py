@@ -13,6 +13,9 @@ RUN_INTERNAL_KODAK_109 = False  # per your request: Kodak uses official MMWaterm
 RUN_INDEPENDENT_HAAR_QIM = False # NOT a published paper reproduction
 TIME_LIMIT_HOURS = 11.3
 CHECKPOINT_EVERY_MINUTES = 60
+# For Kaggle/GitHub transient network stalls during official upstream clone.
+OFFICIAL_GIT_TIMEOUT_S = 420
+OFFICIAL_GIT_RETRIES = 3
 
 W = Path('/kaggle/working'); assert W.is_dir(), 'Use a Kaggle notebook (CPU, Internet ON)'
 RID = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
@@ -73,6 +76,9 @@ def run(label,args,env=None):
     return rec['status']=='complete'
 
 env=os.environ.copy()
+env.update({'TEMPO_GIT_CLONE_TIMEOUT_S':str(OFFICIAL_GIT_TIMEOUT_S),
+            'TEMPO_GIT_CLONE_RETRIES':str(OFFICIAL_GIT_RETRIES),
+            'TEMPO_GIT_CLONE_RETRY_PAUSE_S':'5'})
 env.update({'CUDA_VISIBLE_DEVICES':'-1','PYTHONUNBUFFERED':'1','PYTHONDONTWRITEBYTECODE':'1',
             'OMP_NUM_THREADS':'1','OPENBLAS_NUM_THREADS':'1','MKL_NUM_THREADS':'1',
             'NUMEXPR_NUM_THREADS':'1','NUMBA_NUM_THREADS':'4','JILP_NUM_THREADS':'4',
@@ -127,8 +133,22 @@ try:
                     '--out-dir',official_out,'--severities','1','2','3','4','5','--allow-partial'],env):
                     raw=official_out/'official_mmwatermark_raw.csv';man=official_out/'official_mmwatermark_manifest.json'
                     if raw.is_file() and man.is_file():
+                        # '--allow-partial' preserves usable upstream attack observations
+                        # rather than imposing a scientific acceptance gate. An exit code
+                        # of zero does NOT mean the full requested attack grid ran.
+                        info=json.loads(man.read_text(encoding='utf8'))
+                        rec=state['stages']['07_official_mmwatermark_kodak24']
+                        rec['full_coverage']=bool(info.get('full_coverage',False))
+                        rec['completed_rows']=info.get('completed_rows')
+                        rec['expected_rows']=info.get('expected_full_requested_rows')
+                        if not rec['full_coverage']:
+                            rec['status']='partial'
+                            print('OFFICIAL KODAK: partial compatible coverage; consult manifest and unsupported conditions.',flush=True)
                         run('08_official_summary',[sys.executable,'scripts/summarize_official_kodak.py',
                              '--manifest',man,'--raw',raw,'--out-dir',official_out/'summaries'],env)
+                    else:
+                        state['stages']['07_official_mmwatermark_kodak24']['status']='partial'
+                        state['stages']['07_official_mmwatermark_kodak24']['reason']='Missing official manifest or raw CSV'
     if RUN_INTERNAL_KODAK_109 and KODAK.is_dir():
         cfg=REPORT/'configs'/'proposal_selected_all_watermarks.json'
         if not cfg.is_file():cfg=REPO/'configs'/'manuscript_frozen.json'

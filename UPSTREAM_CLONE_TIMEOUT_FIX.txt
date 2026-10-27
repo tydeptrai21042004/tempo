@@ -1,0 +1,25 @@
+# Upstream clone timeout in official Kodak/MMWatermark evidence
+
+The October 26 Kaggle log shows `subprocess.TimeoutExpired` after 180 seconds while cloning
+`https://github.com/Jielin-Qiu/MMWatermark-Robustness.git`. The internal TEMPO
+experiments and paper-native step exited successfully; **official Kodak evidence did not**.
+
+This patch changes *only* transport reliability and the Kaggle runner; it
+never replaces official MMWatermark perturbations with local imitations.
+Both original Git repositories remain mandatory, with their upstream URLs,
+actual Git commits, clean-tree checks, and bridge SHA-256 recorded as before.
+
+- Default git clone timeout: 420 seconds per attempt (configurable).
+- Three attempts per upstream, with clean retry and no partial Git checkout.
+- Failure after all retries remains a genuine failure in `run_metadata/stage_status.json`.
+- No scientific acceptance gate is added. Separate reviewer completeness diagnostics remain informational.
+
+To rerun only missing official Kodak evidence, set `PROFILE = 'official_kodak'`
+in `KAGGLE_CLONE_ALL_EXPERIMENTS.py`. This downloads fresh Kodak images and
+reruns the original official perturbation suite without rerunning the internal
+TEMPO benchmark. For a complete new execution set `PROFILE = 'all'`.
+
+Kaggle: `Accelerator=None`, `Internet=ON`. Persistent GitHub/network failure
+cannot be fixed solely by a Python code change; the code retries and records
+the reason honestly. The helper is tested entirely offline with simulated
+clone timeouts and verifies preservation of existing user checkouts.

@@ -7,7 +7,7 @@ runner; the upstream perturbations themselves are loaded from the verified
 MMWatermark-Robustness Git checkout, never reimplemented here.
 """
 from __future__ import annotations
-import argparse, ast, csv, hashlib, importlib.util, inspect, json, os, random, subprocess, sys, time
+import argparse, ast, csv, hashlib, importlib.util, inspect, json, os, random, shutil, subprocess, sys, time
 from collections import defaultdict
 from pathlib import Path
 import cv2
@@ -31,6 +31,57 @@ KNOWN = ('gaussian_noise','shot_noise','impulse_noise','speckle_noise',
          'piecewise_affine','piecewise_affine_transform')
 
 
+def clone_upstream_with_retry(url: str, path: Path) -> None:
+    """Clone a named, genuine upstream repository without changing its source.
+
+    GitHub/Kaggle can occasionally stall before finishing a shallow checkout.
+    Retry only the transport step, remove its incomplete destination, and keep
+    a real Git checkout so prepare_repo/prepare_companion can attest origin,
+    pristine working tree, and exact commit. No local corruption substitute is
+    permitted. A pre-existing checkout is *not* removed here.
+    """
+    path = Path(path)
+    if path.exists() and any(path.iterdir()):
+        raise RuntimeError(f'Refusing to replace an existing upstream directory: {path}')
+    timeout = int(os.getenv('TEMPO_GIT_CLONE_TIMEOUT_S', '420'))
+    retries = int(os.getenv('TEMPO_GIT_CLONE_RETRIES', '3'))
+    pause = float(os.getenv('TEMPO_GIT_CLONE_RETRY_PAUSE_S', '5'))
+    if not 30 <= timeout <= 3600:
+        raise ValueError('TEMPO_GIT_CLONE_TIMEOUT_S must be in [30,3600] seconds')
+    if not 1 <= retries <= 8:
+        raise ValueError('TEMPO_GIT_CLONE_RETRIES must be in [1,8]')
+    if not 0 <= pause <= 120:
+        raise ValueError('TEMPO_GIT_CLONE_RETRY_PAUSE_S must be in [0,120] seconds')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = ['git','-c','http.version=HTTP/1.1',
+           '-c','http.lowSpeedLimit=1024','-c','http.lowSpeedTime=90',
+           'clone','--depth','1','--single-branch',url,str(path)]
+    env = {**os.environ,'GIT_TERMINAL_PROMPT':'0'}
+    errors = []
+    for attempt in range(1, retries+1):
+        # At this point the only possible existing destination is the one
+        # produced by a previous failed attempt in this function.
+        print(f'Upstream clone {attempt}/{retries}: {url} (timeout {timeout}s)',flush=True)
+        try:
+            subprocess.run(cmd,check=True,timeout=timeout,env=env)
+            if not (path/'.git').is_dir():
+                raise RuntimeError('Git clone exited successfully but produced no .git directory')
+            return
+        except (subprocess.SubprocessError, OSError, RuntimeError) as exc:
+            errors.append(f'{type(exc).__name__}: {exc}')
+            # Never leave a partial .git checkout that makes a subsequent
+            # attempt look like a valid, attestable upstream repository.
+            if path.exists():
+                shutil.rmtree(path)
+            if attempt != retries:
+                print(f'Clone attempt {attempt} failed; retrying clean checkout.',flush=True)
+                if pause:
+                    time.sleep(pause)
+    raise RuntimeError(f'Unable to clone verified upstream {url} after {retries} attempts; '
+                       f'last error: {errors[-1]}. Check Kaggle Internet setting '
+                       'and run the official_kodak profile again; do not substitute local attacks.')
+
+
 def prepare_repo(path: Path, *, clone: bool=True) -> str:
     path=Path(path)
     if not (path/'.git').exists():
@@ -39,8 +90,7 @@ def prepare_repo(path: Path, *, clone: bool=True) -> str:
         if path.exists() and any(path.iterdir()):
             raise RuntimeError('Refusing to clone into nonempty unverified directory')
         path.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(['git','clone','--depth','1',OFFICIAL_URL,str(path)],check=True,timeout=180,
-                       env={**os.environ,'GIT_TERMINAL_PROMPT':'0'})
+        clone_upstream_with_retry(OFFICIAL_URL, path)
     origin=subprocess.run(['git','-C',str(path),'remote','get-url','origin'],check=True,capture_output=True,text=True).stdout.strip()
     if origin.rstrip('/').removesuffix('.git').lower()!=OFFICIAL_URL.removesuffix('.git').lower():
         raise RuntimeError(f'Not the official repository: {origin}')
@@ -73,8 +123,7 @@ def prepare_companion(path: Path, *, clone: bool=True) -> str:
         if path.exists() and any(path.iterdir()):
             raise RuntimeError(f'Refusing a non-empty unverified companion directory: {path}')
         path.parent.mkdir(parents=True,exist_ok=True)
-        subprocess.run(['git','clone','--depth','1',COMPANION_URL,str(path)],check=True,timeout=180,
-                       env={**os.environ,'GIT_TERMINAL_PROMPT':'0'})
+        clone_upstream_with_retry(COMPANION_URL, path)
     origin=subprocess.run(['git','-C',str(path),'remote','get-url','origin'],check=True,
                           capture_output=True,text=True).stdout.strip()
     if origin.rstrip('/').removesuffix('.git').lower()!=COMPANION_URL.removesuffix('.git').lower():
