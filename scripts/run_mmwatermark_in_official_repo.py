@@ -38,6 +38,7 @@ def build_command(args: argparse.Namespace, bridge: Path, upstream_sha: str) -> 
            '--config',str(args.config),
            '--out-dir',str(args.out_dir),
            '--methods','proposal', '--seed',str(args.seed),
+           '--protocol',str(args.protocol),
            '--severities',*[str(x) for x in args.severities]]
     if args.attacks:
         cmd.extend(['--attacks',args.attacks])
@@ -124,7 +125,9 @@ if __name__=='__main__':
     p.add_argument('--config',type=Path,required=True)
     p.add_argument('--out-dir',type=Path,required=True)
     p.add_argument('--severities',type=int,nargs='+',default=[1,2,3,4,5])
-    p.add_argument('--attacks',default='',help='Empty means every discovered official image corruption, including rotate_img')
+    p.add_argument('--protocol',choices=['paper100','source_all','custom'],default='paper100',
+                   help='Default: exactly the original paper’s 20 families and five severities')
+    p.add_argument('--attacks',default='',help='Only for custom; paper100 resolves the official 20 function aliases')
     p.add_argument('--host-limit',type=int,default=0)
     p.add_argument('--watermark-limit',type=int,default=0)
     p.add_argument('--seed',type=int,default=2026)

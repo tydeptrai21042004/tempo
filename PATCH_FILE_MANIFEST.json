@@ -1,0 +1,95 @@
+{
+  "scope": "changed-and-new-files-only",
+  "original_zip": "tempo-main(2).zip",
+  "preserves_existing_method": true,
+  "no_automatic_scientific_gate_enforcement": true,
+  "code_files": 15,
+  "files": [
+    {
+      "path": "scripts/run_official_mmwatermark_tempo.py",
+      "sha256": "61d19644f3432d3dde767df160c586fac8891f6684823a65fb08079b17b24518",
+      "bytes": 32248
+    },
+    {
+      "path": "scripts/run_mmwatermark_in_official_repo.py",
+      "sha256": "5657b96fcb0e55ba0ba92cd651a9ced617b647a1d674ee4f43f32c7291c674a4",
+      "bytes": 7932
+    },
+    {
+      "path": "scripts/run_reviewer_expansion.py",
+      "sha256": "55ec6b39df8ef9d4e53614d1eb9da90865e67f333ce52b20ae3e382cad126260",
+      "bytes": 6600
+    },
+    {
+      "path": "scripts/reviewer_detection_protocol.py",
+      "sha256": "9ed30ac86ff7a24a705e8d82518ad3f4c7c3a31d37113c1ce5826675259d56ca",
+      "bytes": 6587
+    },
+    {
+      "path": "scripts/create_reviewer_holdout.py",
+      "sha256": "8cdf711a714e148bf6c465557a07287982f4a40ccd7b29079c35c63cd1e736b8",
+      "bytes": 2438
+    },
+    {
+      "path": "scripts/reviewer_security_extended.py",
+      "sha256": "b1463ad710a80143b9ac588f26084682f94bbd433c3d0214ba85afea7a217fe2",
+      "bytes": 7498
+    },
+    {
+      "path": "scripts/reviewer_security_verification.py",
+      "sha256": "9418893416f1b38a209d476b2023f1cb3a6795d0605ddccbe0e2df1f7fad45b8",
+      "bytes": 7454
+    },
+    {
+      "path": "scripts/reviewer_key_schedule_security.py",
+      "sha256": "b4bb552bfd8c8c3d9df13fffa9970680c37000ff9a3d480a1fa062c4a519395c",
+      "bytes": 3470
+    },
+    {
+      "path": "scripts/reviewer_capacity_full.py",
+      "sha256": "e1024bda0858078527947ec26c34bb6fec6e3d788fa5890185f4922d72676967",
+      "bytes": 3468
+    },
+    {
+      "path": "scripts/reviewer_joint_theory.py",
+      "sha256": "08b1479f3c7f478fad06f9570dce4fadff7d91df35e6e381384f29d192f6f2f6",
+      "bytes": 2866
+    },
+    {
+      "path": "scripts/reviewer_video_security.py",
+      "sha256": "778ac7449755eb7a149a009b1103d0f3a1e63bba11222a6bdfa1f2013b19ad7c",
+      "bytes": 4959
+    },
+    {
+      "path": "scripts/package_paper_evidence.py",
+      "sha256": "d87ec08fd65e0fe62b1eed16282664dad175114bbea1b810643d70757c8d3daf",
+      "bytes": 2799
+    },
+    {
+      "path": "scripts/generate_tempo_evidence_plots.py",
+      "sha256": "388eebbc8ae55c8cf91efd94e40717afacd8c2b5db9a8b1ff9c575ed41a3c1d7",
+      "bytes": 6478
+    },
+    {
+      "path": "scripts/run_tempo_evidence.py",
+      "sha256": "e7fbde1df1ca31f857bf21381a1dacd3938e69bc7c2457f059b94b09261c98fa",
+      "bytes": 13772
+    },
+    {
+      "path": "TEMPO_EVIDENCE_EXPANSION_USAGE.md",
+      "sha256": "8be52b344e790f7ae52e20bd44e4b8cfb7f55249bc6317163b61358d7192f44c",
+      "bytes": 5406
+    }
+  ],
+  "full_external_MMWatermark_and_video_runs": "not executed; require external original upstream and real video",
+  "smoke_stages_tested": [
+    "theory",
+    "capacity",
+    "security",
+    "key_schedule",
+    "detection",
+    "verification",
+    "video_security",
+    "plots"
+  ]
+}

@@ -40,11 +40,16 @@ def single_group(host_dir,wm_dir,cfg,seed,neg_per_pair,sync,group):
         for hp in hosts:
             host=np.asarray(Image.open(hp).convert('RGB'))
             encoded,key=embed_proposal(host,wm,seed=seed+104729*widx,method_params=cfg.to_dict())
-            params={**key.params, 'host_shape':tuple(host.shape), 'watermark_shape':tuple(wm.shape)}
+            params={'params':dict(key.params), 'host_shape':tuple(host.shape),
+                    'watermark_shape':tuple(wm.shape),'seed':int(key.seed),
+                    'method_id':key.method_id, 'step':key.step,
+                    'arnold_iter':key.arnold_iter,'arnold_period':key.arnold_period}
             checks=[('marked_correct_key',True,encoded,params),
                     ('unmarked_correct_key',False,host,params)]
             for j in range(neg_per_pair):
-                wrong=dict(params);wrong['seed']=int(params['seed'])+7919+1009*j
+                wrong={**params,'params':dict(params['params'])}
+                wrong['seed']=int(params['seed'])+7919+1009*j
+                wrong['params']['seed']=wrong['seed']
                 checks.append((f'wrong_key_{j}',False,encoded,wrong))
             for label,positive,received,k in checks:
                 score=observed_score(received,wm,k,sync)

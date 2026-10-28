@@ -31,6 +31,55 @@ KNOWN = ('gaussian_noise','shot_noise','impulse_noise','speckle_noise',
          'piecewise_affine','piecewise_affine_transform')
 
 
+# Exact 20-family set used by the original MMWatermark paper (Table 3).
+# Aliases exist only because upstream function names vary between revisions.
+# An unresolved original family is an error, not an excuse to substitute an
+# unrelated 23-family repository attack or silently reduce the denominator.
+PAPER20 = (
+    ('gaussian_noise', ('gaussian_noise',)),
+    ('shot_noise', ('shot_noise',)),
+    ('impulse_noise', ('impulse_noise',)),
+    ('speckle_noise', ('speckle_noise',)),
+    ('defocus_blur', ('defocus_blur',)),
+    ('glass_blur', ('glass_blur',)),
+    ('motion_blur', ('motion_blur',)),
+    ('zoom_blur', ('zoom_blur',)),
+    ('snow', ('snow',)),
+    ('frost', ('frost',)),
+    ('fog', ('fog',)),
+    ('brightness', ('brightness',)),
+    ('contrast', ('contrast',)),
+    ('elastic_transform', ('elastic_transform',)),
+    ('pixelate', ('pixelate',)),
+    ('jpeg_compression', ('jpeg_compression',)),
+    ('scale', ('scale','scaling')),
+    ('rotation', ('rotation','rotate','rotate_img')),
+    ('shear', ('shear','shearing')),
+    ('piecewise_affine', ('piecewise_affine','piecewise_affine_transform')),
+)
+PAPER20_CATEGORIES = {
+    'Noise': [x[0] for x in PAPER20[0:4]],
+    'Blur': [x[0] for x in PAPER20[4:8]],
+    'Weather': [x[0] for x in PAPER20[8:12]],
+    'Digital': [x[0] for x in PAPER20[12:16]],
+    'Geometric': [x[0] for x in PAPER20[16:20]],
+}
+
+
+def resolve_paper20(discovered):
+    available=set(discovered)
+    pairs=[]
+    for family, aliases in PAPER20:
+        actual=next((alias for alias in aliases if alias in available),None)
+        if actual is None:
+            raise RuntimeError(f'Official MMWatermark paper-100 family {family!r} not available '
+                               f'in upstream functions; accepted aliases: {aliases}. Do not substitute.')
+        pairs.append((family,actual))
+    if len({actual for _,actual in pairs})!=20:
+        raise RuntimeError('Upstream alias collision violates exact paper-100 coverage')
+    return pairs
+
+
 def clone_upstream_with_retry(url: str, path: Path) -> None:
     """Clone a named, genuine upstream repository without changing its source.
 
@@ -342,7 +391,22 @@ def main(args):
         raise ValueError('Upstream commit differs from expected frozen SHA')
     official_source=find_module(args.official_repo)
     names=discover_names(official_source)
-    selected=[x.strip() for x in args.attacks.split(',') if x.strip()] if args.attacks else names
+    if args.protocol == 'paper100':
+        if args.attacks:
+            raise ValueError('--protocol paper100 cannot be combined with a custom --attacks selection')
+        if list(args.severities) != [1,2,3,4,5]:
+            raise ValueError('The original paper100 protocol requires all five severities 1..5')
+        canonical_pairs=resolve_paper20(names)
+        selected=[actual for canonical,actual in canonical_pairs]
+    elif args.protocol == 'source_all':
+        if args.attacks:
+            raise ValueError('Use --protocol custom to specify a subset')
+        selected=names
+        canonical_pairs=[(name,name) for name in selected]
+    else:
+        selected=[x.strip() for x in args.attacks.split(',') if x.strip()] if args.attacks else names
+        canonical_pairs=[(name,name) for name in selected]
+    canonical_by_function={actual:canon for canon,actual in canonical_pairs}
     if not selected:
         raise ValueError('No compatible official perturbation functions discovered')
     if len(selected) != len(set(selected)) or len(args.severities) != len(set(args.severities)):
@@ -426,6 +490,7 @@ def main(args):
                           'provider_commit':upstream_sha,'method_id':mid,
                           'detector_class':fidelity_status(mid)['blindness_tier'],
                           'host':hp.name,'watermark':wp.name,'attack':label,
+                          'canonical_attack_family':canonical_by_function.get(name,'clean'),
                           'severity':severity,'payload_bits':int(wm.size),
                           'clean_embedding_psnr':clean_psnr,'nc_bipolar':nc_binary(wm,recovered),
                           'ber':ber(wm,recovered),'embed_ms':embed_ms,'extract_ms':extract_ms})
@@ -453,6 +518,8 @@ def main(args):
               'official_commit':upstream_sha,'execution_cwd':str(Path.cwd()),
               'integration_entry':str(Path(__file__).resolve()),'official_source_sha256':hashlib.sha256(official_source.read_bytes()).hexdigest(),
               'companion_commit':companion_sha,'selected_attack_functions':selected,
+              'protocol':args.protocol,'canonical_to_upstream':dict(canonical_pairs),
+              'paper100_categories':PAPER20_CATEGORIES if args.protocol=='paper100' else None,
               'severities':args.severities,'methods':selected_methods,
               'hosts':[x.name for x in hosts],'watermarks':[x.name for x in watermarks],
               'expected_full_requested_rows':expected_full,
@@ -496,7 +563,9 @@ if __name__=='__main__':
     p.add_argument('--config',type=Path,default=Path('configs/frozen_selected_20261021.json'))
     p.add_argument('--out-dir',type=Path,required=True)
     p.add_argument('--methods',default='proposal')
-    p.add_argument('--attacks',default='',help='Comma-separated official upstream function names; empty means all discovered')
+    p.add_argument('--protocol',choices=['paper100','source_all','custom'],default='custom',
+                   help='paper100 = original 20x5 Table 3; source_all = upstream extras; custom = named subset')
+    p.add_argument('--attacks',default='',help='Comma-separated upstream names, only for custom protocol')
     p.add_argument('--severities',type=int,nargs='+',default=[1,2,3,4,5])
     p.add_argument('--host-limit',type=int,default=0)
     p.add_argument('--watermark-limit',type=int,default=0)

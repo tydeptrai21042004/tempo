@@ -9,7 +9,7 @@ import argparse
 import hashlib
 import json
 import os
-import shutil
+from package_paper_evidence import package
 from pathlib import Path
 import subprocess
 import sys
@@ -94,8 +94,9 @@ def run(a):
     manifest['incomplete_stages']=missing
     (out/'expansion_ledger.json').write_text(json.dumps(manifest,indent=2))
     if not a.no_zip:
-        archive = shutil.make_archive(str(out), 'zip', root_dir=str(out))
-        print('Results ZIP:', archive, flush=True)
+        archive = out.with_name(out.name+'_PAPER_EVIDENCE.zip')
+        package(out, archive)
+        print('Compact evidence ZIP:', archive, flush=True)
     return manifest
 
 def parser():

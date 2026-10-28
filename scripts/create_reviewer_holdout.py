@@ -17,7 +17,7 @@ def sha256(path: Path) -> str:
 
 
 def split_hosts(host_dir: Path, output: Path, development_count: int = 3) -> dict:
-    hosts = sorted(host_dir.glob('*.bmp'))
+    hosts = sorted(p for p in host_dir.glob('*.bmp') if p.stem.lower() not in {'lenna','lena'})
     if not 1 <= development_count < len(hosts):
         raise ValueError('Need at least one development and one held-out BMP host')
     development, test = hosts[:development_count], hosts[development_count:]
