@@ -38,7 +38,7 @@ def build_command(args: argparse.Namespace, bridge: Path, upstream_sha: str) -> 
            '--config',str(args.config),
            '--out-dir',str(args.out_dir),
            '--methods','proposal', '--seed',str(args.seed),
-           '--protocol',str(args.protocol),
+           '--protocol',str(getattr(args, 'protocol', 'custom' if args.attacks else 'paper100')),  # backwards-compatible programmatic callers
            '--severities',*[str(x) for x in args.severities]]
     if args.attacks:
         cmd.extend(['--attacks',args.attacks])

@@ -28,7 +28,7 @@ from .fair_benchmark import calibrate_step_to_psnr
 from .registry import STREAM_BENCHMARK_METHODS, embed, extract, normalize_method_id
 from .proposals.jilp_qim.method import extract_jilp_qim
 
-STREAM_PROTOCOL_VERSION = "1.1"
+STREAM_PROTOCOL_VERSION = "1.2"
 STREAM_METHODS = tuple(STREAM_BENCHMARK_METHODS)
 VOTE_WINDOWS = (1, 3, 5, 10, 15, 30)
 
@@ -125,7 +125,7 @@ def _running_vote(recovered: list[np.ndarray]) -> np.ndarray:
     return ((np.sum(stack, axis=0) * 2 >= stack.shape[0]).astype(np.uint8) * 255)
 
 
-def _method_params(method_id: str, proposal_params: dict[str, Any] | None) -> dict[str, Any]:
+def _method_params(method_id: str, proposal_params: dict[str, Any] | None, *, paper_dew: bool = False) -> dict[str, Any]:
     method_id = normalize_method_id(method_id)
     if method_id == "proposal":
         return dict(proposal_params or {})
@@ -133,7 +133,7 @@ def _method_params(method_id: str, proposal_params: dict[str, Any] | None) -> di
         return {
             "blocks_per_bit": "auto",
             "cutoff": 1,
-            "embedding_mode": "minimum_energy_removal",
+            "embedding_mode": "paper_zeroing" if paper_dew else "minimum_energy_removal",
         }
     return {}
 
@@ -502,7 +502,15 @@ def run_stream_benchmark(
     calibration_iterations: int = 7,
     pace_mode: str = "virtual",
     proposal_params: dict[str, Any] | None = None,
+    calibration_mode: str = "legacy_test_frame",
+    calibration_frames: list[np.ndarray] | None = None,
+    method_steps: dict[str, float | None] | None = None,
+    paper_dew: bool = False,
 ) -> dict[str, Any]:
+    if calibration_mode not in {"legacy_test_frame", "development", "frozen"}:
+        raise ValueError("calibration_mode must be legacy_test_frame, development, or frozen")
+    if calibration_mode == "development" and not calibration_frames:
+        raise ValueError("development calibration requires separately provided development frames")
     if not frames:
         raise ValueError("At least one frame is required")
     mode = str(pace_mode).lower().strip()
@@ -522,14 +530,25 @@ def run_stream_benchmark(
         method_id = normalize_method_id(raw_method)
         if method_id not in STREAM_METHODS:
             raise KeyError(f"Unsupported stream method {raw_method}; choices: {STREAM_METHODS}")
-        params = _method_params(method_id, proposal_params)
-        step, observed = calibrate_step_to_psnr(
-            method_id, frames[0], wm, target_psnr=float(target_psnr), seed=int(seed),
-            iterations=int(calibration_iterations), method_params=params,
-        )
+        params = _method_params(method_id, proposal_params, paper_dew=paper_dew)
+        if calibration_mode == "frozen":
+            # No test-video calibration; None means the method's documented
+            # frozen/default step (TEMPO uses proposal_params["step"]).
+            step = (method_steps or {}).get(method_id)
+            observed = None
+        else:
+            development_frame = (calibration_frames[0] if calibration_mode == "development"
+                                 else frames[0])
+            step, observed = calibrate_step_to_psnr(
+                method_id, development_frame, wm, target_psnr=float(target_psnr),
+                seed=int(seed), iterations=int(calibration_iterations),
+                method_params=params,
+            )
         calibration_rows.append({
             "method_id": method_id, "target_psnr": float(target_psnr),
-            "calibrated_step": float(step), "observed_psnr": float(observed),
+            "calibrated_step": None if step is None else float(step),
+            "observed_psnr": None if observed is None else float(observed),
+            "calibration_mode": calibration_mode,
             "method_params_json": json.dumps(params, sort_keys=True),
         })
         # Exact-configuration warm-up before measured streaming.
@@ -541,14 +560,14 @@ def run_stream_benchmark(
             traces, queue_drops, duration = runner(
                 frames, method_id=method_id, watermark=wm, channel=channel,
                 target_fps=float(target_fps), queue_size=int(queue_size), seed=int(seed),
-                step=float(step), method_params=params,
+                step=None if step is None else float(step), method_params=params,
             )
             summary = summarize_stream_run(
                 traces, method_id=method_id, channel=channel, watermark=wm,
                 target_fps=float(target_fps), resolution=(w, h), pace_mode=mode,
                 queue_size=int(queue_size), queue_drops=queue_drops,
-                total_duration_s=duration, calibrated_step=float(step),
-                calibration_psnr=float(observed),
+                total_duration_s=duration, calibrated_step=None if step is None else float(step),
+                calibration_psnr=None if observed is None else float(observed),
             )
             summaries.append(summary)
             for row in traces:
@@ -577,7 +596,9 @@ def run_stream_benchmark(
         "bounded_queue": int(queue_size),
         "drop_policy": "drop oldest in both realtime and deterministic virtual-replay modes",
         "target_fps": float(target_fps),
-        "target_psnr": float(target_psnr),
+        "target_psnr": float(target_psnr) if calibration_mode != "frozen" else None,
+        "calibration_mode": calibration_mode,
+        "paper_dew": bool(paper_dew),
         "channels": list(channels),
         "methods": [normalize_method_id(x) for x in methods],
         "watermark": watermark_statistics(wm),

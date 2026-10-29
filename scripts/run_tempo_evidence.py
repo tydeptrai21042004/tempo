@@ -29,7 +29,7 @@ SCRIPTS={
     'integer':'reviewer_integer_optimality.py',
     'integer_boundaries':'reviewer_integer_boundaries.py',
     'latency':'reviewer_latency_breakdown.py',
-    'learned_native':'reviewer_learned_baseline.py',
+    # learned_native deliberately absent from required/reviewer executable stages
     'pareto':'reviewer_pareto_frontier.py',
     'joint_sensitivity':'reviewer_joint_sensitivity.py',
     'temporal_limits':'reviewer_temporal_limits.py',
@@ -49,6 +49,8 @@ def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 def main(a):
     out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
     stages=[s.strip() for s in a.only.split(',') if s.strip()] if a.only else list(SCRIPTS)
+    if 'learned_native' in stages:
+        raise ValueError('expanded_learned_native is excluded by the final manuscript scope')
     if not stages or any(x not in SCRIPTS for x in stages):
         raise ValueError(f'Unknown stage, supported: {", ".join(SCRIPTS)}')
     if a.development_dir is None or a.test_dir is None:

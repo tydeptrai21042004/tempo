@@ -65,8 +65,17 @@ def main() -> None:
     p.add_argument("--calibration-iterations", type=int, default=7)
     p.add_argument("--pace-mode", choices=["virtual", "realtime"], default="virtual")
     p.add_argument("--proposal-config", default=None)
+    p.add_argument("--calibration-mode", choices=["legacy_test_frame", "frozen", "development"],
+                   default="legacy_test_frame", help="Use frozen for primary reviewer comparison; no test-video tuning")
+    p.add_argument("--calibration-input", default=None, help="Separate development video, only with development mode")
+    p.add_argument("--paper-dew", action="store_true", help="Use the paper-associated coefficient-zeroing DEW implementation")
+    p.add_argument("--require-real-video", action="store_true", help="Fail instead of using synthetic video frames")
     args = p.parse_args()
 
+    if args.require_real_video and not args.input:
+        raise ValueError("A real --input video is required; synthetic fallback forbidden")
+    if args.calibration_mode == "development" and not args.calibration_input:
+        raise ValueError("--calibration-input required for development calibration")
     out = Path(args.workdir)
     out.mkdir(parents=True, exist_ok=True)
     watermark = (
@@ -86,6 +95,8 @@ def main() -> None:
         frames = load_stream_frames(
             args.input, width=width, height=height, max_frames=args.frames
         )
+        development_frames = (load_stream_frames(args.calibration_input, width=width, height=height,
+                              max_frames=1) if args.calibration_mode == "development" else None)
         for fps in target_rates:
             run_out = out / f"{width}x{height}_{fps:g}fps"
             result = run_stream_benchmark(
@@ -101,6 +112,9 @@ def main() -> None:
                 calibration_iterations=args.calibration_iterations,
                 pace_mode=args.pace_mode,
                 proposal_params=proposal.to_dict(),
+                calibration_mode=args.calibration_mode,
+                calibration_frames=development_frames,
+                paper_dew=args.paper_dew,
             )
             combined_summary.extend(result["summary"])
             combined_trace.extend(result["trace"])
@@ -120,6 +134,11 @@ def main() -> None:
         "channels": channels,
         "pace_mode": args.pace_mode,
         "queue_size": args.queue_size,
+        "calibration_mode": args.calibration_mode,
+        "calibration_source": args.calibration_input,
+        "calibration_source_sha256": _sha256_file(Path(args.calibration_input)) if args.calibration_input else None,
+        "paper_dew": bool(args.paper_dew),
+        "source_type": "real_video" if args.input else "synthetic_diagnostic_only",
         "frames_requested": args.frames,
         "watermark_size": args.wm_size,
         "payload_bits": int(watermark.size),

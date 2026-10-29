@@ -1,0 +1,25 @@
+{
+  "base_archive": "tempo-main(4).zip",
+  "updated": [
+    "scripts/live_stream_benchmark.py",
+    "scripts/reviewer_capacity_full.py",
+    "scripts/reviewer_joint_theory.py",
+    "scripts/run_mmwatermark_in_official_repo.py",
+    "scripts/run_tempo_evidence.py",
+    "src/realtime_watermark/registry.py",
+    "src/realtime_watermark/stream_pipeline.py",
+    "tests/test_clean_repository.py"
+  ],
+  "added": [
+    "FINAL_REVIEWER_PATCH_README.md",
+    "KAGGLE_FINAL_REVIEWER_ONE_CELL.py",
+    "scripts/export_final_integer_audit.py",
+    "scripts/kaggle_final_reviewer_pipeline.sh",
+    "scripts/reviewer_cross_interference.py",
+    "scripts/run_final_reviewer_protocol.py",
+    "scripts/run_tempo_dew_video_suite.py",
+    "tests/test_final_reviewer_protocol.py"
+  ],
+  "unchanged_in_project": 313,
+  "overlay_usage": "Extract into existing repository root; commit changed files only."
+}

@@ -54,6 +54,20 @@ BASELINE_METHODS = [
     dct_spread_spectrum_cox1997.METHOD_ID,
     dew_langelaar2001.METHOD_ID,
 ]
+# Final reviewer protocol: two DISJOINT baseline sets. Historical suites retain
+# their legacy lists for reproducibility and must not be conflated with these.
+ROBUSTNESS_BASELINES = (
+    dct_dm_qim_chen2001.METHOD_ID,
+    dct_stdm_qim_chen2001.METHOD_ID,
+    dct_iss_malvar2003.METHOD_ID,
+    ca_qim_a2_mao2024.METHOD_ID,
+    dct_spread_spectrum_cox1997.METHOD_ID,
+)
+REALTIME_VIDEO_BASELINES = (dew_langelaar2001.METHOD_ID,)
+assert len(ROBUSTNESS_BASELINES) == 5
+assert len(REALTIME_VIDEO_BASELINES) == 1
+assert not set(ROBUSTNESS_BASELINES) & set(REALTIME_VIDEO_BASELINES)
+
 PROPOSAL_METHOD = proposal_method.METHOD_ID
 # Existing 4096-bit common image/video protocols are intentionally unchanged:
 # paper-style DEW requires at least two DCT blocks per bit.  DEW is evaluated
@@ -224,7 +238,7 @@ def method_metadata() -> list[dict[str, Any]]:
 
 
 __all__ = [
-    "METHOD_MODULES", "BASELINE_METHODS", "PROPOSAL_METHOD", "PAPER_NATIVE_METHODS",
+    "METHOD_MODULES", "BASELINE_METHODS", "ROBUSTNESS_BASELINES", "REALTIME_VIDEO_BASELINES", "PROPOSAL_METHOD", "PAPER_NATIVE_METHODS",
     "COMMON_IMAGE_METHODS", "COMMON_VIDEO_METHODS", "STREAM_BENCHMARK_METHODS", "DIAGNOSTIC_METHODS",
     "IMAGE_BENCHMARK_METHODS", "MODERN_ADAPTER_METHODS", "ALL_METHODS", "ALL_PUBLIC_METHOD_IDS", "METHOD_REFS",
     "METHOD_ALIASES", "normalize_method_id", "embed", "prepare_embedding",

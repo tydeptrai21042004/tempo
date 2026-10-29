@@ -51,7 +51,13 @@ def main(a):
             'mean_clean_psnr_db':float(np.mean([r['clean_psnr_db'] for r in clean])),
             'mean_clean_nc':float(np.mean([r['nc'] for r in clean])),
             'mean_attacked_nc':float(np.mean([r['nc'] for r in attacked])),
-            'mean_attacked_ber':float(np.mean([r['ber'] for r in attacked]))})
+            'mean_attacked_ber':float(np.mean([r['ber'] for r in attacked])),
+            'embed_ms_median':float(np.median([r['embedding_ms'] for r in clean])),
+            'embed_ms_p95':float(np.percentile([r['embedding_ms'] for r in clean],95)),
+            'aligned_extract_ms_median':float(np.median([r['extraction_ms'] for r in clean])),
+            'aligned_extract_ms_p95':float(np.percentile([r['extraction_ms'] for r in clean],95)),
+            'attacked_extract_ms_p95':float(np.percentile([r['extraction_ms'] for r in attacked],95)),
+            'timing_scope':'instrumented per-case times; not independently warmed microbenchmarks'})
     write_rows(out/'payload_capacity_summary.csv',summary)
     write_json(out/'manifest.json',{'status':'complete','config_sha256':cfg.sha256(),
         'protocol':reviewer_manifest_summary(),'evaluated_attacks':[x[0] for x in attacks],

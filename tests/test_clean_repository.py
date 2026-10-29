@@ -24,7 +24,9 @@ def test_no_document_files_or_generated_result_directories():
     # Source-controlled experiment protocols are intentional, not generated documents.
     allowed_protocols = {"TEMPO_METHOD_REVISION_README.md", "VIDEO_EVIDENCE_README.md", "README_PATCH.md", "PATCH_README.md", "HARTLEY_FREQUENCY_PRESERVING_PATCH_README.md", "README_OFFICIAL_MMWATERMARK_FIX.md", "README_FIX.md"}
     allowed_protocols.update({'README.md','PATCH_GITHUB_INSTRUCTIONS.md','CHANGELOG_REVIEWER_REVISION.md',
-                              'PAPER_2024_FIDELITY.md','REVIEWER_EVIDENCE.md','RELATED_BASELINES.md'})
+                              'PAPER_2024_FIDELITY.md','REVIEWER_EVIDENCE.md','RELATED_BASELINES.md',
+                              'TEMPO_FOCUSED_REVISION_README.md','TEMPO_EVIDENCE_EXPANSION_USAGE.md',
+                              'FINAL_REVIEWER_PATCH_README.md'})
     documents = [
         p for p in ROOT.rglob("*")
         if p.is_file() and p.suffix.lower() in forbidden_suffixes
